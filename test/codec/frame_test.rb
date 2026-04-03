@@ -1,66 +1,126 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "stringio"
 
 describe Protocol::ZMTP::Codec::Frame do
   Frame = Protocol::ZMTP::Codec::Frame
 
+  def stream(data)
+    IO::Stream::Buffered.new(StringIO.new(data))
+  end
+
   def roundtrip(frame)
-    wire = frame.to_wire
-    io = IO::Stream::Buffered.wrap(StringIO.new(wire))
-    Frame.read_from(io)
+    Frame.read_from(stream(frame.to_wire))
   end
 
-  it "encodes and decodes a short data frame" do
-    frame = Frame.new("hello")
-    decoded = roundtrip(frame)
-    assert_equal "hello", decoded.body
-    refute decoded.more?
-    refute decoded.command?
+  describe "#to_wire and .read_from round-trip" do
+    it "handles empty body" do
+      frame = Frame.new("".b)
+      decoded = roundtrip(frame)
+      assert_equal "".b, decoded.body
+      refute decoded.more?
+      refute decoded.command?
+    end
+
+    it "handles short body (< 256 bytes)" do
+      body = "hello world".b
+      frame = Frame.new(body)
+      wire = frame.to_wire
+      # short frame: 1 byte flags + 1 byte size + body
+      assert_equal 2 + body.bytesize, wire.bytesize
+      decoded = roundtrip(frame)
+      assert_equal body, decoded.body
+    end
+
+    it "handles body at short frame boundary (255 bytes)" do
+      body = ("x" * 255).b
+      frame = Frame.new(body)
+      wire = frame.to_wire
+      assert_equal 2 + 255, wire.bytesize
+      decoded = roundtrip(frame)
+      assert_equal body, decoded.body
+    end
+
+    it "handles long body (> 255 bytes)" do
+      body = ("A" * 256).b
+      frame = Frame.new(body)
+      wire = frame.to_wire
+      # long frame: 1 byte flags + 8 byte size + body
+      assert_equal 9 + 256, wire.bytesize
+      decoded = roundtrip(frame)
+      assert_equal body, decoded.body
+    end
+
+    it "preserves MORE flag" do
+      frame = Frame.new("data".b, more: true)
+      decoded = roundtrip(frame)
+      assert decoded.more?
+      refute decoded.command?
+    end
+
+    it "preserves COMMAND flag" do
+      frame = Frame.new("cmd".b, command: true)
+      decoded = roundtrip(frame)
+      assert decoded.command?
+      refute decoded.more?
+    end
+
+    it "preserves MORE + COMMAND flags together" do
+      frame = Frame.new("data".b, more: true, command: true)
+      decoded = roundtrip(frame)
+      assert decoded.more?
+      assert decoded.command?
+    end
   end
 
-  it "encodes and decodes a short frame with MORE" do
-    frame = Frame.new("part1", more: true)
-    decoded = roundtrip(frame)
-    assert_equal "part1", decoded.body
-    assert decoded.more?
-    refute decoded.command?
+  describe "#to_wire encoding" do
+    it "sets flags byte correctly for short frame" do
+      frame = Frame.new("x".b, more: true)
+      wire = frame.to_wire
+      flags = wire.getbyte(0)
+      assert_equal Frame::FLAGS_MORE, flags & Frame::FLAGS_MORE
+      assert_equal 0, flags & Frame::FLAGS_LONG
+    end
+
+    it "sets LONG flag for large frames" do
+      frame = Frame.new(("x" * 256).b)
+      wire = frame.to_wire
+      flags = wire.getbyte(0)
+      assert_equal Frame::FLAGS_LONG, flags & Frame::FLAGS_LONG
+    end
+
+    it "encodes size as big-endian uint64 for long frames" do
+      body = ("A" * 300).b
+      frame = Frame.new(body)
+      wire = frame.to_wire
+      size = wire.byteslice(1, 8).unpack1("Q>")
+      assert_equal 300, size
+    end
   end
 
-  it "encodes and decodes a command frame" do
-    frame = Frame.new("\x05READY", command: true)
-    decoded = roundtrip(frame)
-    assert_equal "\x05READY", decoded.body
-    assert decoded.command?
-    refute decoded.more?
-  end
+  describe ".read_from" do
+    it "raises EOFError on empty IO" do
+      assert_raises(EOFError) { Frame.read_from(stream("".b)) }
+    end
 
-  it "encodes and decodes a long frame (> 255 bytes)" do
-    big = "x" * 300
-    frame = Frame.new(big)
-    decoded = roundtrip(frame)
-    assert_equal big, decoded.body
-  end
-
-  it "encodes an empty frame" do
-    frame = Frame.new("")
-    decoded = roundtrip(frame)
-    assert_equal "", decoded.body
+    it "raises EOFError on truncated frame" do
+      wire = [0x00, 10].pack("CC") + ("x" * 5)
+      assert_raises(EOFError) { Frame.read_from(stream(wire)) }
+    end
   end
 
   describe ".encode_message" do
     it "encodes a single-part message" do
       wire = Frame.encode_message(["hello"])
-      io   = IO::Stream::Buffered.wrap(StringIO.new(wire))
-
-      f = Frame.read_from(io)
+      f    = Frame.read_from(stream(wire))
       assert_equal "hello", f.body
       refute f.more?
     end
 
     it "encodes a multi-part message with correct MORE flags" do
       wire = Frame.encode_message(["part1", "part2", "part3"])
-      io   = IO::Stream::Buffered.wrap(StringIO.new(wire))
+      io   = stream(wire)
 
       f1 = Frame.read_from(io)
       assert_equal "part1", f1.body
@@ -76,12 +136,11 @@ describe Protocol::ZMTP::Codec::Frame do
     end
 
     it "returns a frozen string" do
-      wire = Frame.encode_message(["data"])
-      assert wire.frozen?
+      assert Frame.encode_message(["data"]).frozen?
     end
 
-    it "produces identical bytes to write_message" do
-      parts = ["topic.foo", "payload here"]
+    it "produces identical bytes to per-frame encoding" do
+      parts   = ["topic.foo", "payload here"]
       encoded = Frame.encode_message(parts)
 
       manual = +""
