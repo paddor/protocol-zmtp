@@ -86,4 +86,32 @@ describe Protocol::ZMTP::Connection do
     refute_nil conn.last_received_at
     refute conn.heartbeat_expired?(1.0)
   end
+
+  it "#curve? returns false for NULL mechanism" do
+    Async do
+      server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
+      [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+
+      refute server.curve?
+      refute client.curve?
+    ensure
+      sio&.close; cio&.close
+    end
+  end
+
+  it "#write_wire writes pre-encoded bytes readable as frames" do
+    Async do
+      server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
+      [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+
+      wire = Protocol::ZMTP::Codec::Frame.encode_message(["hello", "world"])
+      Async { client.write_wire(wire); client.flush }
+      msg = nil
+      Async { msg = server.receive_message }.wait
+
+      assert_equal ["hello", "world"], msg
+    ensure
+      sio&.close; cio&.close
+    end
+  end
 end

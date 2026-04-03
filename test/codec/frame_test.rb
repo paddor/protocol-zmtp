@@ -47,4 +47,49 @@ describe Protocol::ZMTP::Codec::Frame do
     decoded = roundtrip(frame)
     assert_equal "", decoded.body
   end
+
+  describe ".encode_message" do
+    it "encodes a single-part message" do
+      wire = Frame.encode_message(["hello"])
+      io   = IO::Stream::Buffered.wrap(StringIO.new(wire))
+
+      f = Frame.read_from(io)
+      assert_equal "hello", f.body
+      refute f.more?
+    end
+
+    it "encodes a multi-part message with correct MORE flags" do
+      wire = Frame.encode_message(["part1", "part2", "part3"])
+      io   = IO::Stream::Buffered.wrap(StringIO.new(wire))
+
+      f1 = Frame.read_from(io)
+      assert_equal "part1", f1.body
+      assert f1.more?
+
+      f2 = Frame.read_from(io)
+      assert_equal "part2", f2.body
+      assert f2.more?
+
+      f3 = Frame.read_from(io)
+      assert_equal "part3", f3.body
+      refute f3.more?
+    end
+
+    it "returns a frozen string" do
+      wire = Frame.encode_message(["data"])
+      assert wire.frozen?
+    end
+
+    it "produces identical bytes to write_message" do
+      parts = ["topic.foo", "payload here"]
+      encoded = Frame.encode_message(parts)
+
+      manual = +""
+      parts.each_with_index do |part, i|
+        manual << Frame.new(part, more: i < parts.size - 1).to_wire
+      end
+
+      assert_equal manual, encoded
+    end
+  end
 end
