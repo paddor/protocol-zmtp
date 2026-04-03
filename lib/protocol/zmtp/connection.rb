@@ -91,6 +91,26 @@ module Protocol
         end
       end
 
+      # Writes pre-encoded wire bytes to the buffer without flushing.
+      # Used for fan-out: encode once, write to many connections.
+      #
+      # @param wire_bytes [String] ZMTP wire-format bytes
+      # @return [void]
+      def write_wire(wire_bytes)
+        @mutex.synchronize do
+          @io.write(wire_bytes)
+        end
+      end
+
+      # Returns true if the ZMTP mechanism encrypts at the frame level
+      # (e.g. CURVE). TLS encryption is below ZMTP and does not affect
+      # wire-format bytes.
+      #
+      # @return [Boolean]
+      def curve?
+        @mechanism.encrypted?
+      end
+
       # Flushes the write buffer to the underlying IO.
       def flush
         @mutex.synchronize do
