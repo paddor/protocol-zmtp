@@ -160,16 +160,16 @@ module Protocol
       # @raise [EOFError] if connection is closed
       def read_frame
         loop do
-          frame = Codec::Frame.read_from(@io)
+          begin
+            frame = Codec::Frame.read_from(@io, max_message_size: @max_message_size)
+          rescue Error
+            close
+            raise
+          end
           touch_heartbeat
 
           if @mechanism.encrypted? && frame.body.bytesize > 8 && frame.body.byteslice(0, 8) == "\x07MESSAGE".b
             frame = @mechanism.decrypt(frame)
-          end
-
-          if @max_message_size && !frame.command? && frame.body.bytesize > @max_message_size
-            close
-            raise Error, "frame size #{frame.body.bytesize} exceeds max_message_size #{@max_message_size}"
           end
 
           if frame.command?

@@ -73,7 +73,7 @@ module Protocol
         # @return [Frame]
         # @raise [Error] on invalid frame
         # @raise [EOFError] if the connection is closed
-        def self.read_from(io)
+        def self.read_from(io, max_message_size: nil)
           flags = io.read_exactly(1).getbyte(0)
 
           more    = (flags & FLAGS_MORE) != 0
@@ -85,6 +85,10 @@ module Protocol
                  else
                    io.read_exactly(1).getbyte(0)
                  end
+
+          if max_message_size && size > max_message_size
+            raise Error, "frame size #{size} exceeds max_message_size #{max_message_size}"
+          end
 
           body = size > 0 ? io.read_exactly(size) : "".b
 

@@ -108,6 +108,35 @@ describe Protocol::ZMTP::Codec::Frame do
       wire = [0x00, 10].pack("CC") + ("x" * 5)
       assert_raises(EOFError) { Frame.read_from(stream(wire)) }
     end
+
+    it "raises before reading body when frame exceeds max_message_size" do
+      # Header only: LONG flag + 8-byte size claiming 1 GB, no body bytes.
+      # With the old code, read_from would call read_exactly(1GB) and raise
+      # EOFError. With the fix, it raises Error before touching the body.
+      header = [0x02].pack("C") + [1_000_000_000].pack("Q>")
+      io     = stream(header)
+      err    = assert_raises(Protocol::ZMTP::Error) do
+        Frame.read_from(io, max_message_size: 100)
+      end
+      assert_match(/exceeds max_message_size/, err.message)
+    end
+
+    it "raises for oversized command frames too" do
+      # Command flag set — must still be rejected
+      header = [0x06].pack("C") + [1_000_000_000].pack("Q>") # LONG | COMMAND
+      io     = stream(header)
+      assert_raises(Protocol::ZMTP::Error) do
+        Frame.read_from(io, max_message_size: 100)
+      end
+    end
+
+    it "allows frames within max_message_size" do
+      body  = "hello".b
+      frame = Frame.new(body)
+      wire  = frame.to_wire
+      decoded = Frame.read_from(stream(wire), max_message_size: 100)
+      assert_equal body, decoded.body
+    end
   end
 
   describe ".encode_message" do
