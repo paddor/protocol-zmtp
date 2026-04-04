@@ -6,6 +6,7 @@ require_relative "zmtp/valid_peers"
 require_relative "zmtp/codec"
 require_relative "zmtp/connection"
 require_relative "zmtp/mechanism/null"
+require_relative "zmtp/mechanism/plain"
 require_relative "zmtp/z85"
 
 module Protocol

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Add `Mechanism::Plain` — PLAIN authentication (RFC 24). Carries username and
+  password in a `HELLO` command during the handshake; no frame encryption.
+  Accepts an optional `authenticator:` callable on the server side for
+  credential validation.
+
 ## 0.1.2
 
 - Check frame size against `max_message_size` before reading the body from the
