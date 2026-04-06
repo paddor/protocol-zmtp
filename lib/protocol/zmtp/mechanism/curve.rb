@@ -41,38 +41,48 @@ module Protocol
         # @param public_key [String] 32 bytes
         # @param secret_key [String] 32 bytes
         # @param crypto [Module] NaCl-compatible backend (RbNaCl or Nuckle)
-        # @param authenticator [#include?, #call, nil] client key authenticator
+        # @param authenticator [#call, nil] called with a {PeerInfo}
+        #   during authentication; must return truthy to allow the connection.
+        #   When nil, any client with a valid vouch is accepted.
         # @return [Curve]
-        def self.server(public_key, secret_key, crypto:, authenticator: nil)
+        def self.server(public_key:, secret_key:, crypto:, authenticator: nil)
           new(public_key:, secret_key:, crypto:, as_server: true, authenticator:)
         end
 
         # Creates a CURVE client mechanism.
         #
-        # @param public_key [String] 32 bytes
-        # @param secret_key [String] 32 bytes
-        # @param server_key [String] 32 bytes
+        # @param server_key [String] 32 bytes (server permanent public key)
         # @param crypto [Module] NaCl-compatible backend (RbNaCl or Nuckle)
+        # @param public_key [String, nil] 32 bytes (or nil for auto-generated ephemeral identity)
+        # @param secret_key [String, nil] 32 bytes (or nil for auto-generated ephemeral identity)
         # @return [Curve]
-        def self.client(public_key, secret_key, server_key:, crypto:)
+        def self.client(server_key:, crypto:, public_key: nil, secret_key: nil)
           new(public_key:, secret_key:, server_key:, crypto:, as_server: false)
         end
 
-        def initialize(server_key: nil, public_key:, secret_key:, crypto:, as_server: false, authenticator: nil)
-          validate_key!(public_key, "public_key")
-          validate_key!(secret_key, "secret_key")
-
-          @crypto           = crypto
-          @permanent_public = crypto::PublicKey.new(public_key.b)
-          @permanent_secret = crypto::PrivateKey.new(secret_key.b)
-          @as_server        = as_server
-          @authenticator    = authenticator
+        def initialize(public_key: nil, secret_key: nil, server_key: nil, crypto:, as_server: false, authenticator: nil)
+          @crypto        = crypto
+          @as_server     = as_server
+          @authenticator = authenticator
 
           if as_server
+            validate_key!(public_key, "public_key")
+            validate_key!(secret_key, "secret_key")
+            @permanent_public = crypto::PublicKey.new(public_key.b)
+            @permanent_secret = crypto::PrivateKey.new(secret_key.b)
             @cookie_key = crypto::Random.random_bytes(32)
           else
             validate_key!(server_key, "server_key")
             @server_public = crypto::PublicKey.new(server_key.b)
+            if public_key && secret_key
+              validate_key!(public_key, "public_key")
+              validate_key!(secret_key, "secret_key")
+              @permanent_public = crypto::PublicKey.new(public_key.b)
+              @permanent_secret = crypto::PrivateKey.new(secret_key.b)
+            else
+              @permanent_secret = crypto::PrivateKey.generate
+              @permanent_public = @permanent_secret.public_key
+            end
           end
 
           @session_box = nil
@@ -400,13 +410,11 @@ module Protocol
           end
 
           if @authenticator
-            client_key = client_permanent.to_s
-            allowed    = if @authenticator.respond_to?(:include?)
-                           @authenticator.include?(client_key)
-                         else
-                           @authenticator.call(client_key)
-                         end
-            raise Error, "client key not authorized" unless allowed
+            peer = PeerInfo.new(public_key: client_permanent)
+            unless @authenticator.call(peer)
+              send_error(io, "client key not authorized")
+              raise Error, "client key not authorized"
+            end
           end
 
           # --- READY ---
@@ -468,6 +476,16 @@ module Protocol
           @send_nonce_buf.setbyte(17, n & 0xFF); n >>= 8
           @send_nonce_buf.setbyte(16, n & 0xFF)
           @send_nonce_buf
+        end
+
+        def send_error(io, reason)
+          error_body = "".b
+          error_body << "\x05ERROR"
+          error_body << reason.bytesize.chr << reason.b
+          io.write(Codec::Frame.new(error_body, command: true).to_wire)
+          io.flush
+        rescue IOError
+          # connection may already be broken
         end
 
         def validate_key!(key, name)

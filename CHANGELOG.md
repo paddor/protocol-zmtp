@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Breaking:** `Mechanism::Curve` API is now kwargs-only:
+  `Curve.server(public_key:, secret_key:, crypto:)` and
+  `Curve.client(server_key:, crypto:)`. Client keys are optional — when
+  omitted, an ephemeral permanent keypair is auto-generated. INITIATE
+  always contains `C + vouch + metadata` per RFC 26.
+- **Breaking:** Authenticator now receives a `Protocol::ZMTP::PeerInfo`
+  (with a `crypto::PublicKey`) via `#call`. The `#include?` duck-typing
+  is removed. Sends an ERROR command to the client on rejection.
+- Add `Protocol::ZMTP::PeerInfo` shared across mechanisms.
 - Add `#maintenance` to `Mechanism::Curve` for automatic cookie key rotation.
   Returns `{ interval: 60, task: <Proc> }` on server-side mechanisms so the
   host application can rotate the cookie key every 60 seconds, limiting the
