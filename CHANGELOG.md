@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-04-07
 
 - Replace `[Async {}].each(&:wait)` with `Barrier` in tests.
 - YARD documentation on all public methods and classes.
 - Code style: two blank lines between methods and constants.
+- Fix `#read_frame` decryption for non-CURVE encrypted mechanisms
+  (e.g. BLAKE3ZMQ). Previously only CURVE's `\x07MESSAGE`-wrapped command
+  frames were decrypted; inline-encrypted command frames (SUBSCRIBE, PING,
+  etc.) were silently dropped, breaking PUB/SUB over BLAKE3ZMQ.
 
 - **Breaking:** `Mechanism::Curve` API is now kwargs-only:
   `Curve.server(public_key:, secret_key:, crypto:)` and

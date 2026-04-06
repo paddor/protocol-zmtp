@@ -177,8 +177,9 @@ module Protocol
 
 
       # Reads one frame from the wire. Handles PING/PONG automatically.
-      # When using an encrypted mechanism, MESSAGE commands are decrypted
-      # back to ZMTP frames transparently.
+      # When using an encrypted mechanism, all frames are decrypted
+      # transparently (supports both CURVE MESSAGE wrapping and inline
+      # encryption like BLAKE3ZMQ).
       #
       # @return [Codec::Frame]
       # @raise [EOFError] if connection is closed
@@ -192,14 +193,7 @@ module Protocol
           end
           touch_heartbeat
 
-          if @mechanism.encrypted?
-            if frame.command?
-              # CURVE-style MESSAGE commands (backward compatible)
-              frame = @mechanism.decrypt(frame) if frame.body.start_with?("\x07MESSAGE".b)
-            else
-              frame = @mechanism.decrypt(frame)
-            end
-          end
+          frame = @mechanism.decrypt(frame) if @mechanism.encrypted?
 
           if frame.command?
             cmd = Codec::Command.from_body(frame.body)
