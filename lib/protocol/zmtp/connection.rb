@@ -18,6 +18,12 @@ module Protocol
       # @return [String] peer's identity (from READY handshake)
       attr_reader :peer_identity
 
+      # @return [Integer] peer's QoS level (from READY handshake, 0 if absent)
+      attr_reader :peer_qos
+
+      # @return [String] peer's supported hash algorithms in preference order
+      attr_reader :peer_qos_hash
+
       # @return [Object] transport IO (#read_exactly, #write, #flush, #close)
       attr_reader :io
 
@@ -31,7 +37,7 @@ module Protocol
       # @param mechanism [Mechanism::Null, Mechanism::Curve] security mechanism
       # @param max_message_size [Integer, nil] max frame size in bytes, nil = unlimited
       def initialize(io, socket_type:, identity: "", as_server: false,
-                     mechanism: nil, max_message_size: nil)
+                     mechanism: nil, max_message_size: nil, qos: 0, qos_hash: "")
         @io               = io
         @socket_type      = socket_type
         @identity         = identity
@@ -39,6 +45,10 @@ module Protocol
         @mechanism        = mechanism || Mechanism::Null.new
         @peer_socket_type = nil
         @peer_identity    = nil
+        @peer_qos         = nil
+        @peer_qos_hash    = nil
+        @qos              = qos
+        @qos_hash         = qos_hash
         @mutex            = Mutex.new
         @max_message_size = max_message_size
         @last_received_at = nil
@@ -54,10 +64,14 @@ module Protocol
           as_server:   @as_server,
           socket_type: @socket_type,
           identity:    @identity,
+          qos:         @qos,
+          qos_hash:    @qos_hash,
         )
 
         @peer_socket_type = result[:peer_socket_type]
         @peer_identity    = result[:peer_identity]
+        @peer_qos         = result[:peer_qos] || 0
+        @peer_qos_hash    = result[:peer_qos_hash] || ""
 
         unless @peer_socket_type
           raise Error, "peer READY missing Socket-Type"
@@ -89,26 +103,6 @@ module Protocol
         @mutex.synchronize do
           write_frames(parts)
         end
-      end
-
-      # Writes pre-encoded wire bytes to the buffer without flushing.
-      # Used for fan-out: encode once, write to many connections.
-      #
-      # @param wire_bytes [String] ZMTP wire-format bytes
-      # @return [void]
-      def write_wire(wire_bytes)
-        @mutex.synchronize do
-          @io.write(wire_bytes)
-        end
-      end
-
-      # Returns true if the ZMTP mechanism encrypts at the frame level
-      # (e.g. CURVE). TLS encryption is below ZMTP and does not affect
-      # wire-format bytes.
-      #
-      # @return [Boolean]
-      def curve?
-        @mechanism.encrypted?
       end
 
       # Flushes the write buffer to the underlying IO.
@@ -168,8 +162,13 @@ module Protocol
           end
           touch_heartbeat
 
-          if @mechanism.encrypted? && frame.body.bytesize > 8 && frame.body.byteslice(0, 8) == "\x07MESSAGE".b
-            frame = @mechanism.decrypt(frame)
+          if @mechanism.encrypted?
+            if frame.command?
+              # CURVE-style MESSAGE commands (backward compatible)
+              frame = @mechanism.decrypt(frame) if frame.body.start_with?("\x07MESSAGE".b)
+            else
+              frame = @mechanism.decrypt(frame)
+            end
           end
 
           if frame.command?

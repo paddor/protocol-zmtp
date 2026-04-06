@@ -36,7 +36,7 @@ module Protocol
         # @param identity [String]
         # @return [Hash] { peer_socket_type:, peer_identity: }
         # @raise [Error]
-        def handshake!(io, as_server:, socket_type:, identity:)
+        def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: as_server))
           io.flush
 
@@ -48,9 +48,9 @@ module Protocol
           end
 
           if as_server
-            server_handshake!(io, socket_type: socket_type, identity: identity)
+            server_handshake!(io, socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash)
           else
-            client_handshake!(io, socket_type: socket_type, identity: identity)
+            client_handshake!(io, socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash)
           end
         end
 
@@ -64,14 +64,18 @@ module Protocol
         private
 
 
-        def client_handshake!(io, socket_type:, identity:)
+        def client_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
           send_command(io, hello_command)
 
           cmd = read_command(io)
           raise Error, "expected WELCOME, got #{cmd.name}" unless cmd.name == "WELCOME"
 
-          props    = Codec::Command.encode_properties("Socket-Type" => socket_type, "Identity" => identity)
-          initiate = Codec::Command.new("INITIATE", props)
+          props = { "Socket-Type" => socket_type, "Identity" => identity }
+          if qos > 0
+            props["X-QoS"]      = qos.to_s
+            props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
+          end
+          initiate = Codec::Command.new("INITIATE", Codec::Command.encode_properties(props))
           send_command(io, initiate)
 
           cmd = read_command(io)
@@ -81,7 +85,7 @@ module Protocol
         end
 
 
-        def server_handshake!(io, socket_type:, identity:)
+        def server_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
           cmd = read_command(io)
           raise Error, "expected HELLO, got #{cmd.name}" unless cmd.name == "HELLO"
 
@@ -98,7 +102,7 @@ module Protocol
 
           peer_info = extract_peer_info(cmd)
 
-          send_command(io, Codec::Command.ready(socket_type: socket_type, identity: identity))
+          send_command(io, Codec::Command.ready(socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash))
 
           peer_info
         end
@@ -142,7 +146,7 @@ module Protocol
 
           raise Error, "peer command missing Socket-Type" unless peer_socket_type
 
-          { peer_socket_type: peer_socket_type, peer_identity: props["Identity"] || "" }
+          { peer_socket_type: peer_socket_type, peer_identity: props["Identity"] || "", peer_qos: (props["X-QoS"] || "0").to_i, peer_qos_hash: props["X-QoS-Hash"] || "" }
         end
 
 

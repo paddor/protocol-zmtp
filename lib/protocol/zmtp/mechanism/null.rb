@@ -22,7 +22,7 @@ module Protocol
         # @param identity [String]
         # @return [Hash] { peer_socket_type:, peer_identity: }
         # @raise [Error]
-        def handshake!(io, as_server:, socket_type:, identity:)
+        def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: as_server))
           io.flush
 
@@ -33,7 +33,7 @@ module Protocol
             raise Error, "unsupported mechanism: #{peer_greeting[:mechanism]}"
           end
 
-          ready_cmd = Codec::Command.ready(socket_type: socket_type, identity: identity)
+          ready_cmd = Codec::Command.ready(socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash)
           io.write(ready_cmd.to_frame.to_wire)
           io.flush
 
@@ -50,12 +50,14 @@ module Protocol
           props            = peer_cmd.properties
           peer_socket_type = props["Socket-Type"]
           peer_identity    = props["Identity"] || ""
+          peer_qos         = (props["X-QoS"] || "0").to_i
+          peer_qos_hash    = props["X-QoS-Hash"] || ""
 
           unless peer_socket_type
             raise Error, "peer READY missing Socket-Type"
           end
 
-          { peer_socket_type: peer_socket_type, peer_identity: peer_identity }
+          { peer_socket_type: peer_socket_type, peer_identity: peer_identity, peer_qos: peer_qos, peer_qos_hash: peer_qos_hash }
         end
 
         # @return [Boolean] false — NULL does not encrypt frames

@@ -91,11 +91,11 @@ module Protocol
 
         def encrypted? = true
 
-        def handshake!(io, as_server:, socket_type:, identity:)
+        def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           if @as_server
-            server_handshake!(io, socket_type:, identity:)
+            server_handshake!(io, socket_type:, identity:, qos:, qos_hash:)
           else
-            client_handshake!(io, socket_type:, identity:)
+            client_handshake!(io, socket_type:, identity:, qos:, qos_hash:)
           end
         end
 
@@ -161,7 +161,7 @@ module Protocol
         # Client-side handshake
         # ----------------------------------------------------------------
 
-        def client_handshake!(io, socket_type:, identity:)
+        def client_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
           cn_secret = @crypto::PrivateKey.generate
           cn_public = cn_secret.public_key
 
@@ -218,10 +218,12 @@ module Protocol
           vouch_plaintext = cn_public.to_s + @server_public.to_s
           vouch           = @crypto::Box.new(sn_public, @permanent_secret).encrypt(vouch_nonce, vouch_plaintext)
 
-          metadata = Codec::Command.encode_properties(
-            "Socket-Type" => socket_type,
-            "Identity"    => identity,
-          )
+          props = { "Socket-Type" => socket_type, "Identity" => identity }
+          if qos > 0
+            props["X-QoS"]      = qos.to_s
+            props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
+          end
+          metadata = Codec::Command.encode_properties(props)
 
           initiate_box_plaintext = "".b
           initiate_box_plaintext << @permanent_public.to_s
@@ -264,20 +266,22 @@ module Protocol
           props            = Codec::Command.decode_properties(r_plaintext)
           peer_socket_type = props["Socket-Type"]
           peer_identity    = props["Identity"] || ""
+          peer_qos         = (props["X-QoS"] || "0").to_i
+          peer_qos_hash    = props["X-QoS-Hash"] || ""
 
           @session_box = session
           @send_nonce  = 1
           @recv_nonce  = 0
           init_nonce_buffers!
 
-          { peer_socket_type: peer_socket_type, peer_identity: peer_identity }
+          { peer_socket_type: peer_socket_type, peer_identity: peer_identity, peer_qos: peer_qos, peer_qos_hash: peer_qos_hash }
         end
 
         # ----------------------------------------------------------------
         # Server-side handshake
         # ----------------------------------------------------------------
 
-        def server_handshake!(io, socket_type:, identity:)
+        def server_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: true))
           io.flush
           peer_greeting = Codec::Greeting.decode(io.read_exactly(Codec::Greeting::SIZE))
@@ -401,10 +405,12 @@ module Protocol
           end
 
           # --- READY ---
-          ready_metadata = Codec::Command.encode_properties(
-            "Socket-Type" => socket_type,
-            "Identity"    => identity,
-          )
+          ready_props = { "Socket-Type" => socket_type, "Identity" => identity }
+          if qos > 0
+            ready_props["X-QoS"]      = qos.to_s
+            ready_props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
+          end
+          ready_metadata = Codec::Command.encode_properties(ready_props)
 
           r_short_nonce = [1].pack("Q>")
           r_nonce       = NONCE_PREFIX_READY + r_short_nonce
@@ -428,6 +434,8 @@ module Protocol
           {
             peer_socket_type: props["Socket-Type"],
             peer_identity:    props["Identity"] || "",
+            peer_qos:         (props["X-QoS"] || "0").to_i,
+            peer_qos_hash:    props["X-QoS-Hash"] || "",
           }
         end
 

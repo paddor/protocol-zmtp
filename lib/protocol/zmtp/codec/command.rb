@@ -63,13 +63,17 @@ module Protocol
           new(name, data)
         end
 
-        # Builds a READY command with Socket-Type and Identity properties.
-        def self.ready(socket_type:, identity: "")
-          props = encode_properties(
-            "Socket-Type" => socket_type,
-            "Identity"    => identity,
-          )
-          new("READY", props)
+        # Builds a READY command with Socket-Type, Identity, and optional X-QoS properties.
+        #
+        # @param qos [Integer] QoS level (0 = omitted)
+        # @param qos_hash [String] supported hash algorithms in preference order (e.g. "xXsS")
+        def self.ready(socket_type:, identity: "", qos: 0, qos_hash: "")
+          props = { "Socket-Type" => socket_type, "Identity" => identity }
+          if qos > 0
+            props["X-QoS"]      = qos.to_s
+            props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
+          end
+          new("READY", encode_properties(props))
         end
 
         # Builds a SUBSCRIBE command.
