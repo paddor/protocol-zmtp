@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add `#maintenance` to `Mechanism::Curve` for automatic cookie key rotation.
+  Returns `{ interval: 60, task: <Proc> }` on server-side mechanisms so the
+  host application can rotate the cookie key every 60 seconds, limiting the
+  forward secrecy exposure window.
+
 ## 0.2.0
 
 - Add `Mechanism::Plain` — PLAIN authentication (RFC 24). Carries username and

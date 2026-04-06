@@ -91,6 +91,11 @@ module Protocol
 
         def encrypted? = true
 
+        def maintenance
+          return unless @as_server
+          { interval: 60, task: -> { @cookie_key = @crypto::Random.random_bytes(32) } }.freeze
+        end
+
         def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           if @as_server
             server_handshake!(io, socket_type:, identity:, qos:, qos_hash:)
