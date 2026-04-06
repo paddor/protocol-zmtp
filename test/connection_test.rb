@@ -168,6 +168,53 @@ describe Protocol::ZMTP::Connection do
     end
   end
 
+  describe "#write_wire" do
+    it "writes pre-encoded bytes readable as frames" do
+      Async do
+        server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
+
+        Barrier do |barrier|
+          barrier.async { server.handshake! }
+          barrier.async { client.handshake! }
+        end
+
+        wire = Protocol::ZMTP::Codec::Frame.encode_message(["hello", "world"])
+
+        Async do
+          client.write_wire(wire)
+          client.flush
+        end
+
+        msg = nil
+        Async { msg = server.receive_message }.wait
+
+        assert_equal ["hello", "world"], msg
+      ensure
+        sio&.close
+        cio&.close
+      end
+    end
+  end
+
+  describe "#encrypted?" do
+    it "returns false for NULL mechanism" do
+      Async do
+        server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
+
+        Barrier do |barrier|
+          barrier.async { server.handshake! }
+          barrier.async { client.handshake! }
+        end
+
+        refute server.encrypted?
+        refute client.encrypted?
+      ensure
+        sio&.close
+        cio&.close
+      end
+    end
+  end
+
   it "tracks heartbeat timestamps" do
     conn = Connection.new(StringIO.new, socket_type: "PAIR")
     assert_nil conn.last_received_at
