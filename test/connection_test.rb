@@ -30,14 +30,18 @@ describe Protocol::ZMTP::Connection do
       Async do
         server, client, sio, cio = make_pair
 
-        [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async { client.handshake! }
+        end
 
         assert_equal "REP", client.peer_socket_type
         assert_equal "REQ", server.peer_socket_type
         assert_equal "", client.peer_identity
         assert_equal "", server.peer_identity
       ensure
-        sio&.close; cio&.close
+        sio&.close
+        cio&.close
       end
     end
 
@@ -54,12 +58,16 @@ describe Protocol::ZMTP::Connection do
         server = Connection.new(sio, socket_type: "ROUTER", identity: "server-1", as_server: true)
         client = Connection.new(cio, socket_type: "DEALER", identity: "client-1", as_server: false)
 
-        [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async { client.handshake! }
+        end
 
         assert_equal "client-1", server.peer_identity
         assert_equal "server-1", client.peer_identity
       ensure
-        sio&.close; cio&.close
+        sio&.close
+        cio&.close
       end
     end
 
@@ -68,20 +76,20 @@ describe Protocol::ZMTP::Connection do
         server, client, sio, cio = make_pair(server_type: "PUB", client_type: "REQ")
 
         errors = []
-        [
-          Async do
+        Barrier do |bar|
+          bar.async do
             server.handshake!
           rescue Protocol::ZMTP::Error, EOFError => e
             errors << e
             sio.close rescue nil
-          end,
-          Async do
+          end
+          bar.async do
             client.handshake!
           rescue Protocol::ZMTP::Error, EOFError => e
             errors << e
             cio.close rescue nil
-          end,
-        ].each(&:wait)
+          end
+        end
 
         refute_empty errors
       ensure
@@ -109,12 +117,16 @@ describe Protocol::ZMTP::Connection do
           conn_a = Connection.new(io_a, socket_type: type_a)
           conn_b = Connection.new(io_b, socket_type: type_b)
 
-          [Async { conn_a.handshake! }, Async { conn_b.handshake! }].each(&:wait)
+          Barrier do |bar|
+            bar.async { conn_a.handshake! }
+            bar.async { conn_b.handshake! }
+          end
 
           assert_equal type_b, conn_a.peer_socket_type, "#{type_a} should see #{type_b}"
           assert_equal type_a, conn_b.peer_socket_type, "#{type_b} should see #{type_a}"
         ensure
-          io_a&.close; io_b&.close
+          io_a&.close
+          io_b&.close
         end
       end
     end
@@ -124,7 +136,10 @@ describe Protocol::ZMTP::Connection do
     it "sends and receives single-frame messages" do
       Async do
         server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
-        [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async { client.handshake! }
+        end
 
         Async { client.send_message(["hello"]) }
         msg = nil
@@ -132,14 +147,18 @@ describe Protocol::ZMTP::Connection do
 
         assert_equal ["hello"], msg
       ensure
-        sio&.close; cio&.close
+        sio&.close
+        cio&.close
       end
     end
 
     it "sends and receives multi-frame messages" do
       Async do
         server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
-        [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async { client.handshake! }
+        end
 
         Async { client.send_message(["frame1", "frame2", "frame3"]) }
         msg = nil
@@ -147,14 +166,18 @@ describe Protocol::ZMTP::Connection do
 
         assert_equal ["frame1", "frame2", "frame3"], msg
       ensure
-        sio&.close; cio&.close
+        sio&.close
+        cio&.close
       end
     end
 
     it "handles binary data" do
       Async do
         server, client, sio, cio = make_pair(server_type: "PAIR", client_type: "PAIR")
-        [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async { client.handshake! }
+        end
 
         binary = (0..255).map(&:chr).join.b
         Async { client.send_message([binary]) }
@@ -163,7 +186,8 @@ describe Protocol::ZMTP::Connection do
 
         assert_equal [binary], msg
       ensure
-        sio&.close; cio&.close
+        sio&.close
+        cio&.close
       end
     end
   end

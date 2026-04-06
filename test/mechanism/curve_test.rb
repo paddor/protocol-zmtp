@@ -55,7 +55,10 @@ describe Protocol::ZMTP::Mechanism::Curve do
         Async do
           server, client, sio, cio = make_curve_pair(server_crypto: crypto, client_crypto: crypto)
 
-          [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+          Barrier do |bar|
+            bar.async { server.handshake! }
+            bar.async { client.handshake! }
+          end
 
           assert_equal "PAIR", client.peer_socket_type
           assert_equal "PAIR", server.peer_socket_type
@@ -70,7 +73,8 @@ describe Protocol::ZMTP::Mechanism::Curve do
           Async { msg2 = client.receive_message }.wait
           assert_equal ["encrypted reply"], msg2
         ensure
-          sio&.close; cio&.close
+          sio&.close
+          cio&.close
         end
       end
 
@@ -104,20 +108,20 @@ describe Protocol::ZMTP::Mechanism::Curve do
           )
 
           errors = []
-          [
-            Async do
+          Barrier do |bar|
+            bar.async do
               server.handshake!
             rescue Protocol::ZMTP::Error, EOFError => e
               errors << e
               server_io.close rescue nil
-            end,
-            Async do
+            end
+            bar.async do
               client.handshake!
             rescue Protocol::ZMTP::Error, EOFError => e
               errors << e
               client_io.close rescue nil
-            end,
-          ].each(&:wait)
+            end
+          end
 
           refute_empty errors
         ensure
@@ -462,14 +466,18 @@ describe Protocol::ZMTP::Mechanism::Curve do
         Async do
           server, client, sio, cio = make_curve_pair(server_crypto: RbNaCl, client_crypto: Nuckle)
 
-          [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+          Barrier do |bar|
+            bar.async { server.handshake! }
+            bar.async { client.handshake! }
+          end
 
           Async { client.send_message(["nuckle->rbnacl"]) }
           msg = nil
           Async { msg = server.receive_message }.wait
           assert_equal ["nuckle->rbnacl"], msg
         ensure
-          sio&.close; cio&.close
+          sio&.close
+          cio&.close
         end
       end
     end
@@ -479,14 +487,18 @@ describe Protocol::ZMTP::Mechanism::Curve do
         Async do
           server, client, sio, cio = make_curve_pair(server_crypto: Nuckle, client_crypto: RbNaCl)
 
-          [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+          Barrier do |bar|
+            bar.async { server.handshake! }
+            bar.async { client.handshake! }
+          end
 
           Async { client.send_message(["rbnacl->nuckle"]) }
           msg = nil
           Async { msg = server.receive_message }.wait
           assert_equal ["rbnacl->nuckle"], msg
         ensure
-          sio&.close; cio&.close
+          sio&.close
+          cio&.close
         end
       end
     end

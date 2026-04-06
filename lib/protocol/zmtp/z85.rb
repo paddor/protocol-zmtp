@@ -15,6 +15,12 @@ module Protocol
 
       BASE = 85
 
+
+      # Encodes binary data to a Z85-encoded ASCII string.
+      #
+      # @param data [String] binary data (length must be a multiple of 4)
+      # @return [String] Z85-encoded string (5/4 the size of the input)
+      # @raise [ArgumentError] if data length is not a multiple of 4
       def self.encode(data)
         data = data.b
         raise ArgumentError, "data length must be a multiple of 4 (got #{data.bytesize})" unless (data.bytesize % 4).zero?
@@ -32,6 +38,12 @@ module Protocol
         out
       end
 
+
+      # Decodes a Z85-encoded string back to binary data.
+      #
+      # @param string [String] Z85-encoded string (length must be a multiple of 5)
+      # @return [String] decoded binary data (4/5 the size of the input)
+      # @raise [ArgumentError] if string length is not a multiple of 5 or contains invalid characters
       def self.decode(string)
         raise ArgumentError, "string length must be a multiple of 5 (got #{string.bytesize})" unless (string.bytesize % 5).zero?
 

@@ -2,6 +2,7 @@
 
 module Protocol
   module ZMTP
+    # Security mechanisms for the ZMTP handshake (NULL, PLAIN, CURVE).
     module Mechanism
       # NULL security mechanism — no encryption, no authentication.
       #
@@ -9,6 +10,7 @@ module Protocol
       #
       class Null
         MECHANISM_NAME = "NULL"
+
 
         # Performs the full NULL handshake over +io+.
         #
@@ -59,6 +61,7 @@ module Protocol
 
           { peer_socket_type: peer_socket_type, peer_identity: peer_identity, peer_qos: peer_qos, peer_qos_hash: peer_qos_hash }
         end
+
 
         # @return [Boolean] false — NULL does not encrypt frames
         def encrypted? = false

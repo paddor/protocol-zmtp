@@ -10,7 +10,9 @@ require_relative "zmtp/mechanism/null"
 require_relative "zmtp/mechanism/plain"
 require_relative "zmtp/z85"
 
+# Top-level namespace for wire protocol implementations.
 module Protocol
+  # ZMTP 3.1 (ZeroMQ Message Transport Protocol) implementation.
   module ZMTP
     # Autoload CURVE mechanism — requires a crypto backend (rbnacl or nuckle).
     autoload :Curve, File.expand_path("zmtp/mechanism/curve", __dir__)

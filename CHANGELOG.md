@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Replace `[Async {}].each(&:wait)` with `Barrier` in tests.
+- YARD documentation on all public methods and classes.
+- Code style: two blank lines between methods and constants.
+
 - **Breaking:** `Mechanism::Curve` API is now kwargs-only:
   `Curve.server(public_key:, secret_key:, crypto:)` and
   `Curve.client(server_key:, crypto:)`. Client keys are optional — when

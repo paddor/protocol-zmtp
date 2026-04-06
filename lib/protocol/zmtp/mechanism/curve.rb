@@ -23,6 +23,7 @@ module Protocol
       class Curve
         MECHANISM_NAME = "CURVE"
 
+
         # Nonce prefixes.
         NONCE_PREFIX_HELLO     = "CurveZMQHELLO---"
         NONCE_PREFIX_WELCOME   = "WELCOME-"
@@ -33,8 +34,10 @@ module Protocol
         NONCE_PREFIX_VOUCH     = "VOUCH---"
         NONCE_PREFIX_COOKIE    = "COOKIE--"
 
+
         BOX_OVERHEAD = 16
         MAX_NONCE    = (2**64) - 1
+
 
         # Creates a CURVE server mechanism.
         #
@@ -49,6 +52,7 @@ module Protocol
           new(public_key:, secret_key:, crypto:, as_server: true, authenticator:)
         end
 
+
         # Creates a CURVE client mechanism.
         #
         # @param server_key [String] 32 bytes (server permanent public key)
@@ -60,6 +64,13 @@ module Protocol
           new(public_key:, secret_key:, server_key:, crypto:, as_server: false)
         end
 
+
+        # @param public_key [String, nil] 32-byte permanent public key
+        # @param secret_key [String, nil] 32-byte permanent secret key
+        # @param server_key [String, nil] 32-byte server permanent public key (client only)
+        # @param crypto [Module] NaCl-compatible crypto backend
+        # @param as_server [Boolean] whether this side acts as the CURVE server
+        # @param authenticator [#call, nil] optional server-side authenticator
         def initialize(public_key: nil, secret_key: nil, server_key: nil, crypto:, as_server: false, authenticator: nil)
           @crypto        = crypto
           @as_server     = as_server
@@ -90,6 +101,11 @@ module Protocol
           @recv_nonce  = -1
         end
 
+
+        # Resets session state when duplicating (e.g. for a new connection).
+        #
+        # @param source [Curve] the original instance being duplicated
+        # @return [void]
         def initialize_dup(source)
           super
           @session_box    = nil
@@ -99,13 +115,29 @@ module Protocol
           @recv_nonce_buf = nil
         end
 
+
+        # @return [Boolean] true -- CURVE always encrypts frames
         def encrypted? = true
 
+        # Returns a periodic maintenance task for rotating the cookie key (server only).
+        #
+        # @return [Hash, nil] a hash with +:interval+ (seconds) and +:task+ (Proc), or nil for clients
         def maintenance
           return unless @as_server
           { interval: 60, task: -> { @cookie_key = @crypto::Random.random_bytes(32) } }.freeze
         end
 
+
+        # Performs the full CurveZMQ handshake (HELLO/WELCOME/INITIATE/READY).
+        #
+        # @param io [#read_exactly, #write, #flush] transport IO
+        # @param as_server [Boolean] ignored -- uses the value from #initialize
+        # @param socket_type [String] our socket type name
+        # @param identity [String] our identity
+        # @param qos [Integer] QoS level
+        # @param qos_hash [String] supported hash algorithms
+        # @return [Hash] { peer_socket_type:, peer_identity:, peer_qos:, peer_qos_hash: }
+        # @raise [Error] on handshake failure
         def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           if @as_server
             server_handshake!(io, socket_type:, identity:, qos:, qos_hash:)
@@ -114,6 +146,13 @@ module Protocol
           end
         end
 
+
+        # Encrypts a frame body into a CURVE MESSAGE command on the wire.
+        #
+        # @param body [String] plaintext frame body
+        # @param more [Boolean] whether more frames follow in this message
+        # @param command [Boolean] whether this is a command frame
+        # @return [String] binary wire bytes ready for writing
         def encrypt(body, more: false, command: false)
           flags = 0
           flags |= 0x01 if more
@@ -137,9 +176,16 @@ module Protocol
           wire << "\x07MESSAGE" << short_nonce << ciphertext
         end
 
+
         MESSAGE_PREFIX      = "\x07MESSAGE".b.freeze
         MESSAGE_PREFIX_SIZE = MESSAGE_PREFIX.bytesize
 
+
+        # Decrypts a CURVE MESSAGE command frame back into a plaintext frame.
+        #
+        # @param frame [Codec::Frame] an encrypted MESSAGE command frame
+        # @return [Codec::Frame] the decrypted frame with restored flags
+        # @raise [Error] on decryption failure or nonce violation
         def decrypt(frame)
           body = frame.body
           unless body.start_with?(MESSAGE_PREFIX)
@@ -186,6 +232,7 @@ module Protocol
           unless peer_greeting[:mechanism] == MECHANISM_NAME
             raise Error, "expected CURVE mechanism, got #{peer_greeting[:mechanism]}"
           end
+
 
           # --- HELLO ---
           short_nonce = [1].pack("Q>")
@@ -292,6 +339,7 @@ module Protocol
           { peer_socket_type: peer_socket_type, peer_identity: peer_identity, peer_qos: peer_qos, peer_qos_hash: peer_qos_hash }
         end
 
+
         # ----------------------------------------------------------------
         # Server-side handshake
         # ----------------------------------------------------------------
@@ -303,6 +351,7 @@ module Protocol
           unless peer_greeting[:mechanism] == MECHANISM_NAME
             raise Error, "expected CURVE mechanism, got #{peer_greeting[:mechanism]}"
           end
+
 
           # --- Read HELLO ---
           hello_frame = Codec::Frame.read_from(io)
@@ -326,6 +375,7 @@ module Protocol
           unless @crypto::Util.verify64(plaintext, "\x00" * 64)
             raise Error, "HELLO signature content invalid"
           end
+
 
           # --- WELCOME ---
           sn_secret = @crypto::PrivateKey.generate
@@ -417,6 +467,7 @@ module Protocol
             end
           end
 
+
           # --- READY ---
           ready_props = { "Socket-Type" => socket_type, "Identity" => identity }
           if qos > 0
@@ -452,6 +503,7 @@ module Protocol
           }
         end
 
+
         # ----------------------------------------------------------------
         # Nonce helpers
         # ----------------------------------------------------------------
@@ -463,20 +515,29 @@ module Protocol
           @recv_nonce_buf = String.new(recv_pfx + ("\x00" * 8), encoding: Encoding::BINARY)
         end
 
+
         def make_send_nonce
           @send_nonce += 1
           raise Error, "nonce counter exhausted" if @send_nonce > MAX_NONCE
           n = @send_nonce
-          @send_nonce_buf.setbyte(23, n & 0xFF); n >>= 8
-          @send_nonce_buf.setbyte(22, n & 0xFF); n >>= 8
-          @send_nonce_buf.setbyte(21, n & 0xFF); n >>= 8
-          @send_nonce_buf.setbyte(20, n & 0xFF); n >>= 8
-          @send_nonce_buf.setbyte(19, n & 0xFF); n >>= 8
-          @send_nonce_buf.setbyte(18, n & 0xFF); n >>= 8
-          @send_nonce_buf.setbyte(17, n & 0xFF); n >>= 8
+          @send_nonce_buf.setbyte(23, n & 0xFF)
+          n >>= 8
+          @send_nonce_buf.setbyte(22, n & 0xFF)
+          n >>= 8
+          @send_nonce_buf.setbyte(21, n & 0xFF)
+          n >>= 8
+          @send_nonce_buf.setbyte(20, n & 0xFF)
+          n >>= 8
+          @send_nonce_buf.setbyte(19, n & 0xFF)
+          n >>= 8
+          @send_nonce_buf.setbyte(18, n & 0xFF)
+          n >>= 8
+          @send_nonce_buf.setbyte(17, n & 0xFF)
+          n >>= 8
           @send_nonce_buf.setbyte(16, n & 0xFF)
           @send_nonce_buf
         end
+
 
         def send_error(io, reason)
           error_body = "".b
@@ -487,6 +548,7 @@ module Protocol
         rescue IOError
           # connection may already be broken
         end
+
 
         def validate_key!(key, name)
           raise ArgumentError, "#{name} is required" if key.nil?

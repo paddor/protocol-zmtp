@@ -15,8 +15,10 @@ module Protocol
         FLAGS_LONG    = 0x02
         FLAGS_COMMAND = 0x04
 
+
         # Short frame: 1-byte size, max body 255 bytes.
         SHORT_MAX = 255
+
 
         # @return [String] frame body (binary)
         attr_reader :body
@@ -29,6 +31,7 @@ module Protocol
           @more    = more
           @command = command
         end
+
 
         # @return [Boolean] true if more frames follow in this message
         def more?    = @more
@@ -52,6 +55,7 @@ module Protocol
           end
         end
 
+
         # Encodes a multi-part message into a single wire-format string.
         # The result can be written to multiple connections without
         # re-encoding each time (useful for fan-out patterns like PUB).
@@ -66,6 +70,7 @@ module Protocol
           end
           buf.freeze
         end
+
 
         # Reads one frame from an IO-like object.
         #

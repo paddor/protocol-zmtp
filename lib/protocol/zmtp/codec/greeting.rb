@@ -26,6 +26,7 @@ module Protocol
         MECHANISM_LENGTH = 20
         AS_SERVER_OFFSET = 32
 
+
         # Encodes a ZMTP 3.1 greeting.
         #
         # @param mechanism [String] security mechanism name (e.g. "NULL")
@@ -38,6 +39,7 @@ module Protocol
           buf << (as_server ? "\x01" : "\x00")
           buf << ("\x00" * 31)
         end
+
 
         # Decodes a ZMTP greeting.
         #

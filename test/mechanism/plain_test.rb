@@ -32,27 +32,38 @@ describe Protocol::ZMTP::Mechanism::Plain do
       client_mech = Plain.new(username: "alice", password: "s3cr3t")
       server, client, sio, cio = make_pair(server_mech: server_mech, client_mech: client_mech)
 
-      [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+      Barrier do |bar|
+        bar.async { server.handshake! }
+        bar.async { client.handshake! }
+      end
 
       assert_equal "REP", client.peer_socket_type
       assert_equal "REQ", server.peer_socket_type
     ensure
-      sio&.close; cio&.close
+      sio&.close
+      cio&.close
     end
   end
 
   it "passes credentials to the authenticator" do
     Async do
       received = []
-      server_mech = Plain.new(authenticator: ->(u, p) { received << [u, p]; true })
+      server_mech = Plain.new(authenticator: lambda { |u, p|
+        received << [u, p]
+        true
+      })
       client_mech = Plain.new(username: "bob", password: "hunter2")
       server, client, sio, cio = make_pair(server_mech: server_mech, client_mech: client_mech)
 
-      [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+      Barrier do |bar|
+        bar.async { server.handshake! }
+        bar.async { client.handshake! }
+      end
 
       assert_equal [["bob", "hunter2"]], received
     ensure
-      sio&.close; cio&.close
+      sio&.close
+      cio&.close
     end
   end
 
@@ -63,20 +74,20 @@ describe Protocol::ZMTP::Mechanism::Plain do
       server, client, sio, cio = make_pair(server_mech: server_mech, client_mech: client_mech)
 
       errors = []
-      [
-        Async do
+      Barrier do |bar|
+        bar.async do
           server.handshake!
         rescue Protocol::ZMTP::Error, EOFError => e
           errors << e
           sio.close rescue nil
-        end,
-        Async do
+        end
+        bar.async do
           client.handshake!
         rescue Protocol::ZMTP::Error, EOFError => e
           errors << e
           cio.close rescue nil
-        end,
-      ].each(&:wait)
+        end
+      end
 
       refute_empty errors
     ensure
@@ -93,7 +104,10 @@ describe Protocol::ZMTP::Mechanism::Plain do
         server_mech: server_mech, client_mech: client_mech,
         server_type: "PAIR", client_type: "PAIR",
       )
-      [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+      Barrier do |bar|
+        bar.async { server.handshake! }
+        bar.async { client.handshake! }
+      end
 
       Async { client.send_message(["hello plain"]) }
       msg = nil
@@ -101,7 +115,8 @@ describe Protocol::ZMTP::Mechanism::Plain do
 
       assert_equal ["hello plain"], msg
     ensure
-      sio&.close; cio&.close
+      sio&.close
+      cio&.close
     end
   end
 
@@ -116,12 +131,16 @@ describe Protocol::ZMTP::Mechanism::Plain do
                               as_server: false,
                               mechanism: Plain.new(username: "u", password: "p"))
 
-      [Async { server.handshake! }, Async { client.handshake! }].each(&:wait)
+      Barrier do |bar|
+        bar.async { server.handshake! }
+        bar.async { client.handshake! }
+      end
 
       assert_equal "client-id", server.peer_identity
       assert_equal "server-id", client.peer_identity
     ensure
-      sio&.close; cio&.close
+      sio&.close
+      cio&.close
     end
   end
 end

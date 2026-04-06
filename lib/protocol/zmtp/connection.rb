@@ -54,6 +54,7 @@ module Protocol
         @last_received_at = nil
       end
 
+
       # Performs the full ZMTP handshake via the configured mechanism.
       #
       # @return [void]
@@ -83,6 +84,7 @@ module Protocol
         end
       end
 
+
       # Sends a multi-frame message (write + flush).
       #
       # @param parts [Array<String>] message frames
@@ -93,6 +95,7 @@ module Protocol
           @io.flush
         end
       end
+
 
       # Writes a multi-frame message to the buffer without flushing.
       # Call {#flush} after batching writes.
@@ -105,6 +108,7 @@ module Protocol
         end
       end
 
+
       # Writes pre-encoded wire bytes to the buffer without flushing.
       # Used for fan-out: encode once, write to many connections.
       #
@@ -116,6 +120,7 @@ module Protocol
         end
       end
 
+
       # Returns true if the ZMTP mechanism encrypts at the frame level
       # (e.g. CURVE, BLAKE3ZMQ).
       #
@@ -124,12 +129,16 @@ module Protocol
         @mechanism.encrypted?
       end
 
+
       # Flushes the write buffer to the underlying IO.
+      #
+      # @return [void]
       def flush
         @mutex.synchronize do
           @io.flush
         end
       end
+
 
       # Receives a multi-frame message.
       # PING/PONG commands are handled automatically by #read_frame.
@@ -150,6 +159,7 @@ module Protocol
         frames.freeze
       end
 
+
       # Sends a command.
       #
       # @param command [Codec::Command]
@@ -164,6 +174,7 @@ module Protocol
           @io.flush
         end
       end
+
 
       # Reads one frame from the wire. Handles PING/PONG automatically.
       # When using an encrypted mechanism, MESSAGE commands are decrypted
@@ -205,10 +216,14 @@ module Protocol
         end
       end
 
+
       # Records that a frame was received (for heartbeat expiry tracking).
+      #
+      # @return [void]
       def touch_heartbeat
         @last_received_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       end
+
 
       # Returns true if no frame has been received within +timeout+ seconds.
       #
@@ -219,7 +234,10 @@ module Protocol
         (Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_received_at) > timeout
       end
 
+
       # Closes the connection.
+      #
+      # @return [void]
       def close
         @io.close
       rescue IOError
