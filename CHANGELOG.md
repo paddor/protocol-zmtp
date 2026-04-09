@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0 — 2026-04-09
+
+### Added
+
+- **`Connection#write_messages`** — batched multipart send for work-stealing
+  send pumps. Dequeue a batch at once and write it under a single mutex
+  acquisition instead of one lock per message. Amortizes lock overhead on
+  high-throughput paths.
+
+### Changed
+
+- **Zero-alloc frame headers on the unencrypted hot send path.**
+  `#write_frames` used to allocate, per part, a `Codec::Frame` object, a
+  `.b` body copy, a 1-or-9-byte header String, and a concatenated wire
+  String (a copy of the entire body just to glue the header on). The body
+  copy was the dominant allocation — every 64 KB send produced a 64 KB
+  throwaway String, feeding the GC at ~1.2 GB/s under sustained load.
+  Headers are now packed into a reusable `@header_buf` via
+  `Array#pack(buffer:)`, header and body are written separately
+  (io-stream buffers them into one syscall per batch), the `Frame`
+  object is gone, and the body is no longer copied. `@mechanism.encrypted?`
+  is hoisted out of the per-frame loop. The encrypted path is unchanged —
+  CURVE/BLAKE3ZMQ still authenticate over the full encoded frame and need
+  a single wire String per part.
+
+  Bench impact downstream in omq (push_pull + router_dealer, 1 and 3 peers,
+  all transports): 48 improvements, 0 regressions across 72 measurements.
+  Peaks: `router_dealer tcp 3p 64B +40.7%`, `push_pull ipc 1p 64 KB +28.8%`
+  (crosses 1.3 GB/s).
+
 ## 0.3.0 — 2026-04-07
 
 - Replace `[Async {}].each(&:wait)` with `Barrier` in tests.
