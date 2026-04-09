@@ -52,6 +52,11 @@ module Protocol
         @mutex            = Mutex.new
         @max_message_size = max_message_size
         @last_received_at = nil
+
+        # Reusable scratch buffer for frame headers. Array#pack(buffer:)
+        # writes in place so the per-message 2-or-9 byte String allocation
+        # in write_frames disappears on the hot send path.
+        @header_buf = String.new(capacity: 9, encoding: Encoding::BINARY)
       end
 
 
@@ -105,6 +110,27 @@ module Protocol
       def write_message(parts)
         @mutex.synchronize do
           write_frames(parts)
+        end
+      end
+
+
+      # Writes a batch of multi-frame messages to the buffer under a
+      # single mutex acquisition. Used by work-stealing send pumps that
+      # dequeue up to N messages at once — avoids the N lock/unlock
+      # pairs per batch that a plain `batch.each { write_message }`
+      # would incur.
+      #
+      # @param messages [Array<Array<String>>] each element is one
+      #   multi-frame message
+      # @return [void]
+      def write_messages(messages)
+        @mutex.synchronize do
+          i = 0
+          n = messages.size
+          while i < n
+            write_frames(messages[i])
+            i += 1
+          end
         end
       end
 
@@ -248,19 +274,24 @@ module Protocol
       # it -- significant for large messages where the body copy was
       # the dominant allocation per send.
       def write_frames(parts)
+        encrypted = @mechanism.encrypted?
+        buf       = @header_buf
+
         parts.each_with_index do |part, i|
           more = i < parts.size - 1
-          if @mechanism.encrypted?
+          if encrypted
             @io.write(@mechanism.encrypt(part.b, more: more))
           else
             body  = part.b
             size  = body.bytesize
             flags = more ? Codec::Frame::FLAGS_MORE : 0
+            buf.clear
             if size > Codec::Frame::SHORT_MAX
-              @io.write([flags | Codec::Frame::FLAGS_LONG, size].pack("CQ>"))
+              [flags | Codec::Frame::FLAGS_LONG, size].pack("CQ>", buffer: buf)
             else
-              @io.write([flags, size].pack("CC"))
+              [flags, size].pack("CC", buffer: buf)
             end
+            @io.write(buf)
             @io.write(body)
           end
         end
