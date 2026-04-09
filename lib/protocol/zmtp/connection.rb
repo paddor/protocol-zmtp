@@ -241,13 +241,27 @@ module Protocol
       private
 
       # Writes message parts as ZMTP frames, encrypting if needed.
+      #
+      # For the unencrypted path, writes the frame header and body
+      # separately to the IO instead of allocating a wire String. This
+      # avoids copying the body just to glue a 1- or 9-byte header onto
+      # it -- significant for large messages where the body copy was
+      # the dominant allocation per send.
       def write_frames(parts)
         parts.each_with_index do |part, i|
           more = i < parts.size - 1
           if @mechanism.encrypted?
             @io.write(@mechanism.encrypt(part.b, more: more))
           else
-            @io.write(Codec::Frame.new(part, more: more).to_wire)
+            body  = part.b
+            size  = body.bytesize
+            flags = more ? Codec::Frame::FLAGS_MORE : 0
+            if size > Codec::Frame::SHORT_MAX
+              @io.write([flags | Codec::Frame::FLAGS_LONG, size].pack("CQ>"))
+            else
+              @io.write([flags, size].pack("CC"))
+            end
+            @io.write(body)
           end
         end
       end
