@@ -95,9 +95,11 @@ module Protocol
       # @param parts [Array<String>] message frames
       # @return [void]
       def send_message(parts)
-        @mutex.synchronize do
-          write_frames(parts)
-          @io.flush
+        with_deferred_cancel do
+          @mutex.synchronize do
+            write_frames(parts)
+            @io.flush
+          end
         end
       end
 
@@ -108,8 +110,10 @@ module Protocol
       # @param parts [Array<String>] message frames
       # @return [void]
       def write_message(parts)
-        @mutex.synchronize do
-          write_frames(parts)
+        with_deferred_cancel do
+          @mutex.synchronize do
+            write_frames(parts)
+          end
         end
       end
 
@@ -124,12 +128,14 @@ module Protocol
       #   multi-frame message
       # @return [void]
       def write_messages(messages)
-        @mutex.synchronize do
-          i = 0
-          n = messages.size
-          while i < n
-            write_frames(messages[i])
-            i += 1
+        with_deferred_cancel do
+          @mutex.synchronize do
+            i = 0
+            n = messages.size
+            while i < n
+              write_frames(messages[i])
+              i += 1
+            end
           end
         end
       end
@@ -141,8 +147,10 @@ module Protocol
       # @param wire_bytes [String] ZMTP wire-format bytes
       # @return [void]
       def write_wire(wire_bytes)
-        @mutex.synchronize do
-          @io.write(wire_bytes)
+        with_deferred_cancel do
+          @mutex.synchronize do
+            @io.write(wire_bytes)
+          end
         end
       end
 
@@ -191,13 +199,15 @@ module Protocol
       # @param command [Codec::Command]
       # @return [void]
       def send_command(command)
-        @mutex.synchronize do
-          if @mechanism.encrypted?
-            @io.write(@mechanism.encrypt(command.to_body, command: true))
-          else
-            @io.write(command.to_frame.to_wire)
+        with_deferred_cancel do
+          @mutex.synchronize do
+            if @mechanism.encrypted?
+              @io.write(@mechanism.encrypt(command.to_body, command: true))
+            else
+              @io.write(command.to_frame.to_wire)
+            end
+            @io.flush
           end
-          @io.flush
         end
       end
 
@@ -265,6 +275,26 @@ module Protocol
       end
 
       private
+
+      # Defers task cancellation around a block of wire writes so the
+      # peer never sees a half-written frame. Without this, an
+      # +Async::Cancel+ arriving between the header write and the body
+      # write (the unencrypted path issues two separate +@io.write+
+      # calls per frame) would desync the peer's framer
+      # unrecoverably.
+      #
+      # When called outside an Async task (test fixtures, blocking
+      # callers), the block runs directly -- there is no task to defer
+      # on. Cancellation arriving from inside the block (peer
+      # disconnect raising +EPIPE+/+EOFError+) propagates normally.
+      def with_deferred_cancel
+        if defined?(Async::Task) && (task = Async::Task.current?)
+          task.defer_cancel { yield }
+        else
+          yield
+        end
+      end
+
 
       # Writes message parts as ZMTP frames, encrypting if needed.
       #

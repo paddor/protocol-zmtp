@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Wire writes are now cancellation-safe.** `Connection#send_message`,
+  `#write_message`, `#write_messages`, `#write_wire`, and `#send_command`
+  each wrap their `@mutex.synchronize` block in
+  `Async::Task#defer_cancel`. A ZMTP frame is two `@io.write` calls
+  (header then body); under a socket-level barrier cascade (`barrier.stop`)
+  an `Async::Cancel` could previously land between those two writes,
+  leaving the peer with a header pointing at a body that never arrives
+  and an unrecoverable framer desync. `defer_cancel` holds the
+  cancellation until the write finishes, so cascading teardown only
+  unwinds at frame boundaries. Mutex protection is unchanged — it
+  guards against thread races; `defer_cancel` guards against fiber
+  cancellation. Non-Async callers (e.g. tests) fall through to the
+  unwrapped path.
+
 ## 0.4.0 — 2026-04-09
 
 ### Added
