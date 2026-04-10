@@ -306,13 +306,17 @@ module Protocol
       def write_frames(parts)
         encrypted = @mechanism.encrypted?
         buf       = @header_buf
+        last      = parts.size - 1
 
-        parts.each_with_index do |part, i|
-          more = i < parts.size - 1
+        i = 0
+        while i < parts.size
+          part = parts[i]
+          more = i < last
           if encrypted
-            @io.write(@mechanism.encrypt(part.b, more: more))
+            body = part.encoding == Encoding::BINARY ? part : part.b
+            @io.write(@mechanism.encrypt(body, more: more))
           else
-            body  = part.b
+            body  = part.encoding == Encoding::BINARY ? part : part.b
             size  = body.bytesize
             flags = more ? Codec::Frame::FLAGS_MORE : 0
             buf.clear
@@ -324,6 +328,7 @@ module Protocol
             @io.write(buf)
             @io.write(body)
           end
+          i += 1
         end
       end
     end

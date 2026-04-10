@@ -23,11 +23,13 @@ module Protocol
         # @return [String] command data (binary)
         attr_reader :data
 
+        EMPTY_DATA = "".b.freeze
+
         # @param name [String] command name
         # @param data [String] command data
-        def initialize(name, data = "".b)
+        def initialize(name, data = EMPTY_DATA)
           @name = name
-          @data = data.b
+          @data = data.encoding == Encoding::BINARY ? data : data.b
         end
 
 
@@ -35,8 +37,9 @@ module Protocol
         #
         # @return [String] binary body (name-length + name + data)
         def to_body
-          name_bytes = @name.b
-          name_bytes.bytesize.chr.b + name_bytes + @data
+          name_bytes = @name.encoding == Encoding::BINARY ? @name : @name.b
+          buf = String.new(capacity: 1 + name_bytes.bytesize + @data.bytesize, encoding: Encoding::BINARY)
+          buf << Frame::FLAG_BYTES[name_bytes.bytesize] << name_bytes << @data
         end
 
 

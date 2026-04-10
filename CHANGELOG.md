@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1 — 2026-04-10
+
+### Changed
+
+- **Reduced allocations on hot paths.** Pre-computed `FLAG_BYTES` lookup
+  table eliminates `Integer#chr` + `String#b` per frame. `encode_message`
+  inlines wire encoding instead of creating throwaway Frame objects per
+  part. `write_frames` and `Command#to_body` skip redundant `.b` when
+  strings are already binary. `EMPTY_BODY` and `EMPTY_DATA` constants
+  replace per-call `"".b` allocations.
+
 ## 0.5.0 — 2026-04-10
 
 ### Fixed

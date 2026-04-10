@@ -19,6 +19,12 @@ module Protocol
         # Short frame: 1-byte size, max body 255 bytes.
         SHORT_MAX = 255
 
+        # Pre-computed single-byte flag strings (avoids Integer#chr + String#b per frame).
+        FLAG_BYTES = Array.new(256) { |i| i.chr.b.freeze }.freeze
+
+        # Frozen empty binary string for zero-length frame bodies.
+        EMPTY_BODY = "".b.freeze
+
 
         # @return [String] frame body (binary)
         attr_reader :body
@@ -49,9 +55,9 @@ module Protocol
           flags |= FLAGS_COMMAND if @command
 
           if size > SHORT_MAX
-            (flags | FLAGS_LONG).chr.b + [size].pack("Q>") + @body
+            FLAG_BYTES[flags | FLAGS_LONG] + [size].pack("Q>") + @body
           else
-            flags.chr.b + size.chr.b + @body
+            FLAG_BYTES[flags] + FLAG_BYTES[size] + @body
           end
         end
 
@@ -64,9 +70,20 @@ module Protocol
         # @return [String] frozen binary wire representation
         #
         def self.encode_message(parts)
-          buf = +""
-          parts.each_with_index do |part, i|
-            buf << new(part, more: i < parts.size - 1).to_wire
+          buf  = String.new(encoding: Encoding::BINARY)
+          last = parts.size - 1
+          i    = 0
+          while i < parts.size
+            body  = parts[i]
+            body  = body.b unless body.encoding == Encoding::BINARY
+            size  = body.bytesize
+            flags = i < last ? FLAGS_MORE : 0
+            if size > SHORT_MAX
+              buf << FLAG_BYTES[flags | FLAGS_LONG] << [size].pack("Q>") << body
+            else
+              buf << FLAG_BYTES[flags] << FLAG_BYTES[size] << body
+            end
+            i += 1
           end
           buf.freeze
         end
@@ -95,7 +112,7 @@ module Protocol
             raise Error, "frame size #{size} exceeds max_message_size #{max_message_size}"
           end
 
-          body = size > 0 ? io.read_exactly(size) : "".b
+          body = size > 0 ? io.read_exactly(size) : EMPTY_BODY
 
           new(body, more: more, command: command)
         end
