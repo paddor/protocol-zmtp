@@ -3,6 +3,11 @@
 module Protocol
   module ZMTP
     module Codec
+
+      # Frozen empty binary string for zero-length frame bodies.
+      EMPTY_BINARY = "".b.freeze
+
+
       # ZMTP frame encode/decode.
       #
       # Wire format:
@@ -21,9 +26,6 @@ module Protocol
 
         # Pre-computed single-byte flag strings (avoids Integer#chr + String#b per frame).
         FLAG_BYTES = Array.new(256) { |i| i.chr.b.freeze }.freeze
-
-        # Frozen empty binary string for zero-length frame bodies.
-        EMPTY_BODY = "".b.freeze
 
 
         # @return [String] frame body (binary)
@@ -112,7 +114,7 @@ module Protocol
             raise Error, "frame size #{size} exceeds max_message_size #{max_message_size}"
           end
 
-          body = size > 0 ? io.read_exactly(size) : EMPTY_BODY
+          body = size > 0 ? io.read_exactly(size) : EMPTY_BINARY
 
           new(body, more: more, command: command)
         end

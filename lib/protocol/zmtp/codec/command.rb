@@ -20,14 +20,14 @@ module Protocol
         # @return [String] command name (e.g. "READY", "SUBSCRIBE")
         attr_reader :name
 
+
         # @return [String] command data (binary)
         attr_reader :data
 
-        EMPTY_DATA = "".b.freeze
 
         # @param name [String] command name
         # @param data [String] command data
-        def initialize(name, data = EMPTY_DATA)
+        def initialize(name, data = EMPTY_BINARY)
           @name = name
           @data = data.encoding == Encoding::BINARY ? data : data.b
         end

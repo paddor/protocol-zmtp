@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-04-12
+
+### Changed
+
+- **Consolidated empty-binary constant.** `Codec::Frame::EMPTY_BODY`
+  and `Codec::Command::EMPTY_DATA` are gone, replaced by a single
+  `Codec::EMPTY_BINARY` shared across the codec module. Anything
+  referencing the old constants needs to switch to
+  `Protocol::ZMTP::Codec::EMPTY_BINARY`.
+
 ## 0.5.1 — 2026-04-10
 
 ### Changed
