@@ -70,17 +70,21 @@ module Protocol
         end
 
 
-        # Builds a READY command with Socket-Type, Identity, and optional X-QoS properties.
+        # Builds a READY command with Socket-Type, Identity, optional X-QoS,
+        # and any extra properties supplied by upper layers (e.g. an
+        # extension that injects an `X-Compression` property).
         #
         # @param qos [Integer] QoS level (0 = omitted)
         # @param qos_hash [String] supported hash algorithms in preference order (e.g. "xXsS")
+        # @param metadata [Hash{String => String}] additional READY properties
         # @return [Command]
-        def self.ready(socket_type:, identity: "", qos: 0, qos_hash: "")
+        def self.ready(socket_type:, identity: "", qos: 0, qos_hash: "", metadata: nil)
           props = { "Socket-Type" => socket_type, "Identity" => identity }
           if qos > 0
             props["X-QoS"]      = qos.to_s
             props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
           end
+          props.merge!(metadata) if metadata && !metadata.empty?
           new("READY", encode_properties(props))
         end
 

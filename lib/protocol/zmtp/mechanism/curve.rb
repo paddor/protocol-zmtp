@@ -23,6 +23,10 @@ module Protocol
       class Curve
         MECHANISM_NAME = "CURVE"
 
+        # Extra READY/INITIATE properties merged in by extensions
+        # (e.g. ZMTP-Zstd's X-Compression). nil = none.
+        attr_accessor :metadata
+
 
         # Nonce prefixes.
         NONCE_PREFIX_HELLO     = "CurveZMQHELLO---"
@@ -96,9 +100,10 @@ module Protocol
             end
           end
 
-          @session_box = nil
-          @send_nonce  = 0
-          @recv_nonce  = -1
+          @session_box      = nil
+          @send_nonce       = 0
+          @recv_nonce       = -1
+          @metadata = nil
         end
 
 
@@ -285,6 +290,7 @@ module Protocol
             props["X-QoS"]      = qos.to_s
             props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
           end
+          props.merge!(@metadata) if @metadata
           metadata = Codec::Command.encode_properties(props)
 
           initiate_box_plaintext = "".b
@@ -336,7 +342,13 @@ module Protocol
           @recv_nonce  = 0
           init_nonce_buffers!
 
-          { peer_socket_type: peer_socket_type, peer_identity: peer_identity, peer_qos: peer_qos, peer_qos_hash: peer_qos_hash }
+          {
+            peer_socket_type: peer_socket_type,
+            peer_identity:    peer_identity,
+            peer_qos:         peer_qos,
+            peer_qos_hash:    peer_qos_hash,
+            peer_properties:  props,
+          }
         end
 
 
@@ -474,6 +486,7 @@ module Protocol
             ready_props["X-QoS"]      = qos.to_s
             ready_props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
           end
+          ready_props.merge!(@metadata) if @metadata
           ready_metadata = Codec::Command.encode_properties(ready_props)
 
           r_short_nonce = [1].pack("Q>")
@@ -500,6 +513,7 @@ module Protocol
             peer_identity:    props["Identity"] || "",
             peer_qos:         (props["X-QoS"] || "0").to_i,
             peer_qos_hash:    props["X-QoS-Hash"] || "",
+            peer_properties:  props,
           }
         end
 

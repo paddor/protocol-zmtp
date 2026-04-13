@@ -16,15 +16,22 @@ module Protocol
         MECHANISM_NAME = "PLAIN"
 
 
+        # Extra READY/INITIATE properties an upper layer wants this side to
+        # advertise. Mutated before #handshake!.
+        # @return [Hash{String => String}]
+        attr_accessor :metadata
+
+
         # @param username [String] client username (max 255 bytes)
         # @param password [String] client password (max 255 bytes)
         # @param authenticator [#call, nil] server-side credential verifier;
         #   called as +authenticator.call(username, password)+ and must return
         #   truthy to accept the connection.  When +nil+, all credentials pass.
         def initialize(username: "", password: "", authenticator: nil)
-          @username      = username
-          @password      = password
-          @authenticator = authenticator
+          @username         = username
+          @password         = password
+          @authenticator    = authenticator
+          @metadata = nil
         end
 
 
@@ -48,9 +55,11 @@ module Protocol
           end
 
           if as_server
-            server_handshake!(io, socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash)
+            server_handshake! io, socket_type: socket_type, identity: identity,
+              qos: qos, qos_hash: qos_hash
           else
-            client_handshake!(io, socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash)
+            client_handshake! io, socket_type: socket_type, identity: identity,
+              qos: qos, qos_hash: qos_hash
           end
         end
 
@@ -70,11 +79,17 @@ module Protocol
           cmd = read_command(io)
           raise Error, "expected WELCOME, got #{cmd.name}" unless cmd.name == "WELCOME"
 
-          props = { "Socket-Type" => socket_type, "Identity" => identity }
+          props = {
+            "Socket-Type" => socket_type,
+            "Identity" => identity
+          }
+
           if qos > 0
             props["X-QoS"]      = qos.to_s
             props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
           end
+
+          props.merge!(@metadata) if @metadata && !@metadata.empty?
           initiate = Codec::Command.new("INITIATE", Codec::Command.encode_properties(props))
           send_command(io, initiate)
 
@@ -102,7 +117,9 @@ module Protocol
 
           peer_info = extract_peer_info(cmd)
 
-          send_command(io, Codec::Command.ready(socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash))
+          ready = Codec::Command.ready socket_type: socket_type, identity: identity,
+            qos: qos, qos_hash: qos_hash, metadata: @metadata
+          send_command io, ready
 
           peer_info
         end
@@ -146,7 +163,13 @@ module Protocol
 
           raise Error, "peer command missing Socket-Type" unless peer_socket_type
 
-          { peer_socket_type: peer_socket_type, peer_identity: props["Identity"] || "", peer_qos: (props["X-QoS"] || "0").to_i, peer_qos_hash: props["X-QoS-Hash"] || "" }
+          {
+            peer_socket_type: peer_socket_type,
+            peer_identity:    props["Identity"] || "",
+            peer_qos:         (props["X-QoS"] || "0").to_i,
+            peer_qos_hash:    props["X-QoS-Hash"] || "",
+            peer_properties:  props
+          }
         end
 
 

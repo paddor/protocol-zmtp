@@ -24,6 +24,10 @@ module Protocol
       # @return [String] peer's supported hash algorithms in preference order
       attr_reader :peer_qos_hash
 
+      # @return [Hash{String => String}, nil] full peer READY property hash
+      #   (set after a successful handshake; nil before)
+      attr_reader :peer_properties
+
       # @return [Object] transport IO (#read_exactly, #write, #flush, #close)
       attr_reader :io
 
@@ -47,6 +51,7 @@ module Protocol
         @peer_identity    = nil
         @peer_qos         = nil
         @peer_qos_hash    = nil
+        @peer_properties  = nil
         @qos              = qos
         @qos_hash         = qos_hash
         @mutex            = Mutex.new
@@ -78,6 +83,7 @@ module Protocol
         @peer_identity    = result[:peer_identity]
         @peer_qos         = result[:peer_qos] || 0
         @peer_qos_hash    = result[:peer_qos_hash] || ""
+        @peer_properties  = result[:peer_properties]
 
         unless @peer_socket_type
           raise Error, "peer READY missing Socket-Type"

@@ -11,18 +11,28 @@ module Protocol
       class Null
         MECHANISM_NAME = "NULL"
 
+        # Extra READY properties an upper layer (e.g. an OMQ extension)
+        # wants this side to advertise. Mutated before #handshake!.
+        # @return [Hash{String => String}]
+        attr_accessor :metadata
+
+
+        def initialize
+          @metadata = nil
+        end
+
 
         # Performs the full NULL handshake over +io+.
         #
         # 1. Exchange 64-byte greetings
         # 2. Validate peer greeting (version, mechanism)
-        # 3. Exchange READY commands (socket type + identity)
+        # 3. Exchange READY commands (socket type + identity + any extras)
         #
         # @param io [#read_exactly, #write, #flush] transport IO
         # @param as_server [Boolean]
         # @param socket_type [String]
         # @param identity [String]
-        # @return [Hash] { peer_socket_type:, peer_identity: }
+        # @return [Hash] { peer_socket_type:, peer_identity:, peer_qos:, peer_qos_hash:, peer_properties: }
         # @raise [Error]
         def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: as_server))
@@ -35,7 +45,13 @@ module Protocol
             raise Error, "unsupported mechanism: #{peer_greeting[:mechanism]}"
           end
 
-          ready_cmd = Codec::Command.ready(socket_type: socket_type, identity: identity, qos: qos, qos_hash: qos_hash)
+          ready_cmd = Codec::Command.ready(
+            socket_type:      socket_type,
+            identity:         identity,
+            qos:              qos,
+            qos_hash:         qos_hash,
+            metadata: @metadata,
+          )
           io.write(ready_cmd.to_frame.to_wire)
           io.flush
 
@@ -59,7 +75,13 @@ module Protocol
             raise Error, "peer READY missing Socket-Type"
           end
 
-          { peer_socket_type: peer_socket_type, peer_identity: peer_identity, peer_qos: peer_qos, peer_qos_hash: peer_qos_hash }
+          {
+            peer_socket_type: peer_socket_type,
+            peer_identity:    peer_identity,
+            peer_qos:         peer_qos,
+            peer_qos_hash:    peer_qos_hash,
+            peer_properties:  props,
+          }
         end
 
 

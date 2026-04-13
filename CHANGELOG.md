@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0 — 2026-04-13
+
+### Added
+
+- **Extension metadata hook on the handshake mechanisms.** `Mechanism::Null`,
+  `Mechanism::Plain`, and `Mechanism::Curve` expose a `metadata` accessor
+  (`Hash{String => String}`) that upper layers can populate before
+  `#handshake!`. Any entries are merged into the outgoing READY properties
+  (and INITIATE, for CURVE/PLAIN client side). `Codec::Command.ready` gained
+  a matching `metadata:` kwarg. Used by `omq-rfc-zstd` to advertise the
+  `X-Compression` property without forking the handshake code path.
+
+- **`Connection#peer_properties`.** The full peer READY property hash is
+  now retained after a successful handshake (previously only Socket-Type,
+  Identity, and the X-QoS pair were extracted). Extensions can inspect
+  the peer's advertised properties to negotiate optional features.
+  Returned by all three mechanisms as `peer_properties:` in the
+  handshake result hash.
+
 ## 0.6.0 — 2026-04-12
 
 ### Changed
