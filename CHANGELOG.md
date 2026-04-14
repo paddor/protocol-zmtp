@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 — 2026-04-14
+
+### Changed
+
+- **Short-frame read fast path.** `Frame.read_from` now fetches the
+  2-byte header (flags + first size byte) in a single `read_exactly`
+  call instead of two separate 1-byte reads. Short frames (≤255 bytes,
+  the vast majority of ZMTP traffic) now hit a 2-call read path
+  (header + body) instead of 3. Long frames read the remaining 7 size
+  bytes via the extracted `read_long_size` helper.
+
 ## 0.7.0 — 2026-04-13
 
 ### Added

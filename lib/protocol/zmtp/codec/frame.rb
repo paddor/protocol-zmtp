@@ -98,17 +98,17 @@ module Protocol
         # @raise [Error] on invalid frame
         # @raise [EOFError] if the connection is closed
         def self.read_from(io, max_message_size: nil)
-          flags = io.read_exactly(1).getbyte(0)
+          # Every valid frame has at least 2 header bytes (flags + 1 size
+          # byte for short frames, or flags + first size byte for long).
+          # Fetching both up-front gives short frames a 2-call read path
+          # (header + body) instead of 3.
+          head  = io.read_exactly(2)
+          flags = head.getbyte(0)
 
           more    = (flags & FLAGS_MORE) != 0
           long    = (flags & FLAGS_LONG) != 0
           command = (flags & FLAGS_COMMAND) != 0
-
-          size = if long
-                   io.read_exactly(8).unpack1("Q>")
-                 else
-                   io.read_exactly(1).getbyte(0)
-                 end
+          size    = long ? read_long_size(io, head.getbyte(1)) : head.getbyte(1)
 
           if max_message_size && size > max_message_size
             raise Error, "frame size #{size} exceeds max_message_size #{max_message_size}"
@@ -117,6 +117,25 @@ module Protocol
           body = size > 0 ? io.read_exactly(size) : EMPTY_BINARY
 
           new(body, more: more, command: command)
+        end
+
+
+        # Reads the remaining 7 bytes of a long frame's 8-byte big-endian
+        # size field and combines them with +msb+ (already consumed as the
+        # second byte of the 2-byte speculative header read).
+        #
+        # @param io [#read_exactly]
+        # @param msb [Integer] first (most-significant) byte of the size
+        # @return [Integer] full 64-bit frame size
+        #
+        def self.read_long_size(io, msb)
+          rest = io.read_exactly(7)
+
+          (msb << 56) |
+            (rest.getbyte(0) << 48) | (rest.getbyte(1) << 40) |
+            (rest.getbyte(2) << 32) | (rest.getbyte(3) << 24) |
+            (rest.getbyte(4) << 16) | (rest.getbyte(5) << 8)  |
+             rest.getbyte(6)
         end
       end
     end
