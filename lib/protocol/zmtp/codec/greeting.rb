@@ -18,6 +18,11 @@ module Protocol
       #
       module Greeting
         SIZE             = 64
+        # Bytes 0..10 cover the 10-byte signature plus the major-version
+        # byte at offset 10. ZMTP 2.0 peers only send an 11-byte signature
+        # phase (their full greeting is shorter than 64), so we must
+        # sniff the major version before committing to reading 64 bytes.
+        SIGNATURE_SIZE   = 11
         SIGNATURE_START  = 0xFF
         SIGNATURE_END    = 0x7F
         VERSION_MAJOR    = 3
@@ -41,6 +46,32 @@ module Protocol
         end
 
 
+        # Reads and decodes a ZMTP 3.x greeting from +io+, sniffing the
+        # major version after the first 11 bytes so a ZMTP 2.0 peer
+        # (which would never send the full 64 bytes) is detected and
+        # rejected without blocking forever on +read_exactly+.
+        #
+        # @param io [#read_exactly]
+        # @return [Hash] { major:, minor:, mechanism:, as_server: }
+        # @raise [Error] on invalid signature or unsupported version
+        #
+        def self.read_from(io)
+          sig   = io.read_exactly(SIGNATURE_SIZE).b
+          major = sig.getbyte(10)
+
+          unless sig.getbyte(0) == SIGNATURE_START && sig.getbyte(9) == SIGNATURE_END
+            raise Error, "invalid greeting signature"
+          end
+
+          unless major >= 3
+            raise Error, "unsupported ZMTP revision 0x%02x (ZMTP/%d.x); need revision >= 3" %
+                         [major, major == 1 ? 2 : major]
+          end
+
+          decode(sig + io.read_exactly(SIZE - SIGNATURE_SIZE))
+        end
+
+
         # Decodes a ZMTP greeting.
         #
         # @param data [String] 64-byte binary greeting
@@ -59,7 +90,7 @@ module Protocol
           minor = data.getbyte(11)
 
           unless major >= 3
-            raise Error, "unsupported ZMTP version #{major}.#{minor} (need >= 3.0)"
+            raise Error, "unsupported ZMTP revision 0x%02x (need revision >= 3)" % major
           end
 
           mechanism = data.byteslice(MECHANISM_OFFSET, MECHANISM_LENGTH).delete("\x00")

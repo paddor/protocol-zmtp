@@ -32,14 +32,13 @@ module Protocol
         # @param as_server [Boolean]
         # @param socket_type [String]
         # @param identity [String]
-        # @return [Hash] { peer_socket_type:, peer_identity:, peer_qos:, peer_qos_hash:, peer_properties: }
+        # @return [Hash] { peer_socket_type:, peer_identity:, peer_qos:, peer_qos_hash:, peer_properties:, peer_major:, peer_minor: }
         # @raise [Error]
         def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: as_server))
           io.flush
 
-          greeting_data = io.read_exactly(Codec::Greeting::SIZE)
-          peer_greeting = Codec::Greeting.decode(greeting_data)
+          peer_greeting = Codec::Greeting.read_from(io)
 
           unless peer_greeting[:mechanism] == MECHANISM_NAME
             raise Error, "unsupported mechanism: #{peer_greeting[:mechanism]}"
@@ -81,6 +80,8 @@ module Protocol
             peer_qos:         peer_qos,
             peer_qos_hash:    peer_qos_hash,
             peer_properties:  props,
+            peer_major:       peer_greeting[:major],
+            peer_minor:       peer_greeting[:minor],
           }
         end
 

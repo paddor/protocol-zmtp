@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`Codec::Subscription`** — helper module that unifies ZMTP 3.0
+  message-form (`\x01`/`\x00` + prefix data frame) and ZMTP 3.1
+  command-form (`SUBSCRIBE`/`CANCEL` command frame) subscription
+  encodings. `.body(prefix, cancel:)` builds the message-form body;
+  `.parse(frame)` returns `[:subscribe|:cancel, prefix]` for either
+  form, letting upper layers accept both without branching.
+- **`Connection#peer_major` / `#peer_minor`** — ZMTP wire revision of
+  the peer, captured from the greeting. Lets upper layers pick the
+  subscription wire form (and other version-gated features) per peer.
+  Populated by `Mechanism::Null`, `Mechanism::Plain`, and
+  `Mechanism::Curve` via their handshake result hash.
+- **`Codec::Greeting.read_from(io)`** — reads the 11-byte signature
+  phase first, validates the revision byte, then reads the rest of
+  the 64-byte greeting. A ZMTP/2.0 peer (revision `0x01`) is now
+  rejected loudly with `unsupported ZMTP revision 0x01 (ZMTP/2.x);
+  need revision >= 3`, instead of hanging forever in `read_exactly`
+  waiting for bytes that never arrive.
+
+### Changed
+
+- **Greeting error messages** refer to the ZMTP *revision byte*
+  (`0x03`) rather than a "version #{major}.#{minor}" — the byte at
+  offset 10 is the wire revision, which only accidentally matches the
+  spec major in ZMTP/3.x.
+
 ## 0.7.1 — 2026-04-14
 
 ### Changed

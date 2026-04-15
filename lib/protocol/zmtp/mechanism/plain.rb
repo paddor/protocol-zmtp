@@ -47,8 +47,7 @@ module Protocol
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: as_server))
           io.flush
 
-          greeting_data = io.read_exactly(Codec::Greeting::SIZE)
-          peer_greeting = Codec::Greeting.decode(greeting_data)
+          peer_greeting = Codec::Greeting.read_from(io)
 
           unless peer_greeting[:mechanism] == MECHANISM_NAME
             raise Error, "unsupported mechanism: #{peer_greeting[:mechanism]}"

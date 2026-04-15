@@ -11,3 +11,4 @@ end
 require_relative "codec/greeting"
 require_relative "codec/frame"
 require_relative "codec/command"
+require_relative "codec/subscription"

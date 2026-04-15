@@ -71,6 +71,92 @@ describe Protocol::ZMTP::Connection do
       end
     end
 
+    it "records peer ZMTP version from the greeting" do
+      Async do
+        server, client, sio, cio = make_pair
+
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async { client.handshake! }
+        end
+
+        assert_equal 3, server.peer_major
+        assert_equal 1, server.peer_minor
+        assert_equal 3, client.peer_major
+        assert_equal 1, client.peer_minor
+      ensure
+        sio&.close
+        cio&.close
+      end
+    end
+
+    it "rejects a ZMTP 2.0 peer after sniffing the signature" do
+      Async do
+        s1, s2 = UNIXSocket.pair
+        sio = IO::Stream::Buffered.wrap(s1)
+        cio = IO::Stream::Buffered.wrap(s2)
+
+        server = Connection.new(sio, socket_type: "REP", as_server: true)
+
+        # ZMTP 2.0: 10-byte signature + revision=0x01 + socket-type + ...
+        # We only need to deliver enough bytes to let the server read 11
+        # and raise; nothing more would ever arrive from a real 2.0 peer.
+        zmtp2 = "\xFF".b + ("\x00" * 8) + "\x7F".b + "\x01".b
+
+        error = nil
+        Barrier do |bar|
+          bar.async do
+            server.handshake!
+          rescue Protocol::ZMTP::Error => e
+            error = e
+          end
+          bar.async do
+            cio.write(zmtp2)
+            cio.flush
+          end
+        end
+
+        refute_nil error
+        assert_match(/unsupported ZMTP revision 0x01/, error.message)
+      ensure
+        sio&.close
+        cio&.close
+      end
+    end
+
+    it "records peer_minor=0 when peer is ZMTP 3.0" do
+      Async do
+        s1, s2 = UNIXSocket.pair
+        sio = IO::Stream::Buffered.wrap(s1)
+        cio = IO::Stream::Buffered.wrap(s2)
+
+        server = Connection.new(sio, socket_type: "REP", as_server: true)
+
+        # Hand-craft a ZMTP 3.0 client: identical greeting but minor=0.
+        greeting = Protocol::ZMTP::Codec::Greeting.encode(mechanism: "NULL", as_server: false).b
+        greeting.setbyte(11, 0)
+
+        Barrier do |bar|
+          bar.async { server.handshake! }
+          bar.async do
+            cio.write(greeting)
+            cio.flush
+            cio.read_exactly(Protocol::ZMTP::Codec::Greeting::SIZE)
+            ready = Protocol::ZMTP::Codec::Command.ready(socket_type: "REQ", identity: "")
+            cio.write(ready.to_frame.to_wire)
+            cio.flush
+            Protocol::ZMTP::Codec::Frame.read_from(cio) # server READY
+          end
+        end
+
+        assert_equal 3, server.peer_major
+        assert_equal 0, server.peer_minor
+      ensure
+        sio&.close
+        cio&.close
+      end
+    end
+
     it "rejects incompatible socket types" do
       Async do
         server, client, sio, cio = make_pair(server_type: "PUB", client_type: "REQ")

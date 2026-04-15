@@ -28,6 +28,13 @@ module Protocol
       #   (set after a successful handshake; nil before)
       attr_reader :peer_properties
 
+      # @return [Integer, nil] peer ZMTP major version (from greeting)
+      attr_reader :peer_major
+
+      # @return [Integer, nil] peer ZMTP minor version (from greeting);
+      #   0 for ZMTP 3.0 peers, 1 for ZMTP 3.1+
+      attr_reader :peer_minor
+
       # @return [Object] transport IO (#read_exactly, #write, #flush, #close)
       attr_reader :io
 
@@ -52,6 +59,8 @@ module Protocol
         @peer_qos         = nil
         @peer_qos_hash    = nil
         @peer_properties  = nil
+        @peer_major       = nil
+        @peer_minor       = nil
         @qos              = qos
         @qos_hash         = qos_hash
         @mutex            = Mutex.new
@@ -84,6 +93,8 @@ module Protocol
         @peer_qos         = result[:peer_qos] || 0
         @peer_qos_hash    = result[:peer_qos_hash] || ""
         @peer_properties  = result[:peer_properties]
+        @peer_major       = result[:peer_major]
+        @peer_minor       = result[:peer_minor]
 
         unless @peer_socket_type
           raise Error, "peer READY missing Socket-Type"

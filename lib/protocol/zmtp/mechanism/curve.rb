@@ -233,10 +233,12 @@ module Protocol
 
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: false))
           io.flush
-          peer_greeting = Codec::Greeting.decode(io.read_exactly(Codec::Greeting::SIZE))
+          peer_greeting = Codec::Greeting.read_from(io)
           unless peer_greeting[:mechanism] == MECHANISM_NAME
             raise Error, "expected CURVE mechanism, got #{peer_greeting[:mechanism]}"
           end
+          @peer_major = peer_greeting[:major]
+          @peer_minor = peer_greeting[:minor]
 
 
           # --- HELLO ---
@@ -348,6 +350,8 @@ module Protocol
             peer_qos:         peer_qos,
             peer_qos_hash:    peer_qos_hash,
             peer_properties:  props,
+            peer_major:       @peer_major,
+            peer_minor:       @peer_minor,
           }
         end
 
@@ -359,10 +363,12 @@ module Protocol
         def server_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: true))
           io.flush
-          peer_greeting = Codec::Greeting.decode(io.read_exactly(Codec::Greeting::SIZE))
+          peer_greeting = Codec::Greeting.read_from(io)
           unless peer_greeting[:mechanism] == MECHANISM_NAME
             raise Error, "expected CURVE mechanism, got #{peer_greeting[:mechanism]}"
           end
+          @peer_major = peer_greeting[:major]
+          @peer_minor = peer_greeting[:minor]
 
 
           # --- Read HELLO ---
@@ -514,6 +520,8 @@ module Protocol
             peer_qos:         (props["X-QoS"] || "0").to_i,
             peer_qos_hash:    props["X-QoS-Hash"] || "",
             peer_properties:  props,
+            peer_major:       @peer_major,
+            peer_minor:       @peer_minor,
           }
         end
 
