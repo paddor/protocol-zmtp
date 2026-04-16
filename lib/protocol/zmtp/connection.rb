@@ -15,31 +15,40 @@ module Protocol
       # @return [String] peer's socket type (from READY handshake)
       attr_reader :peer_socket_type
 
+
       # @return [String] peer's identity (from READY handshake)
       attr_reader :peer_identity
+
 
       # @return [Integer] peer's QoS level (from READY handshake, 0 if absent)
       attr_reader :peer_qos
 
+
       # @return [String] peer's supported hash algorithms in preference order
       attr_reader :peer_qos_hash
+
 
       # @return [Hash{String => String}, nil] full peer READY property hash
       #   (set after a successful handshake; nil before)
       attr_reader :peer_properties
 
+
       # @return [Integer, nil] peer ZMTP major version (from greeting)
       attr_reader :peer_major
+
 
       # @return [Integer, nil] peer ZMTP minor version (from greeting);
       #   0 for ZMTP 3.0 peers, 1 for ZMTP 3.1+
       attr_reader :peer_minor
 
+
       # @return [Object] transport IO (#read_exactly, #write, #flush, #close)
       attr_reader :io
 
+
       # @return [Float, nil] monotonic timestamp of last received frame
       attr_reader :last_received_at
+
 
       # @param io [#read_exactly, #write, #flush, #close] transport IO
       # @param socket_type [String] our socket type name (e.g. "REQ")
@@ -79,14 +88,12 @@ module Protocol
       # @return [void]
       # @raise [Error] on handshake failure
       def handshake!
-        result = @mechanism.handshake!(
-          @io,
+        result = @mechanism.handshake! @io,
           as_server:   @as_server,
           socket_type: @socket_type,
           identity:    @identity,
           qos:         @qos,
-          qos_hash:    @qos_hash,
-        )
+          qos_hash:    @qos_hash
 
         @peer_socket_type = result[:peer_socket_type]
         @peer_identity    = result[:peer_identity]
@@ -198,15 +205,19 @@ module Protocol
       # @raise [EOFError] if connection is closed
       def receive_message
         frames = []
+
         loop do
           frame = read_frame
+
           if frame.command?
             yield frame if block_given?
             next
           end
+
           frames << frame.body.freeze
           break unless frame.more?
         end
+
         frames.freeze
       end
 
@@ -244,6 +255,7 @@ module Protocol
             close
             raise
           end
+
           touch_heartbeat
 
           frame = @mechanism.decrypt(frame) if @mechanism.encrypted?
@@ -259,6 +271,7 @@ module Protocol
               next
             end
           end
+
           return frame
         end
       end
@@ -326,9 +339,11 @@ module Protocol
         last      = parts.size - 1
 
         i = 0
+
         while i < parts.size
           part = parts[i]
           more = i < last
+
           if encrypted
             body = part.encoding == Encoding::BINARY ? part : part.b
             @io.write(@mechanism.encrypt(body, more: more))
@@ -336,18 +351,23 @@ module Protocol
             body  = part.encoding == Encoding::BINARY ? part : part.b
             size  = body.bytesize
             flags = more ? Codec::Frame::FLAGS_MORE : 0
+
             buf.clear
+
             if size > Codec::Frame::SHORT_MAX
               [flags | Codec::Frame::FLAGS_LONG, size].pack("CQ>", buffer: buf)
             else
               [flags, size].pack("CC", buffer: buf)
             end
+
             @io.write(buf)
             @io.write(body)
           end
+
           i += 1
         end
       end
+
     end
   end
 end
