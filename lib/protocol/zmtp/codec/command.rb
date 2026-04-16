@@ -130,9 +130,9 @@ module Protocol
         # @param ttl [Numeric] time-to-live in seconds (sent as deciseconds)
         # @param context [String] optional context bytes (up to 16 bytes)
         # @return [Command]
-        def self.ping(ttl: 0, context: "".b)
+        def self.ping(ttl: 0, context: EMPTY_BINARY)
           ttl_ds = (ttl * 10).to_i
-          new("PING", [ttl_ds].pack("n") + context.b)
+          new("PING", [ttl_ds].pack("n") + (context.encoding == Encoding::BINARY ? context : context.b))
         end
 
 
@@ -140,8 +140,8 @@ module Protocol
         #
         # @param context [String] context bytes echoed from the PING
         # @return [Command]
-        def self.pong(context: "".b)
-          new("PONG", context.b)
+        def self.pong(context: EMPTY_BINARY)
+          new("PONG", context.encoding == Encoding::BINARY ? context : context.b)
         end
 
 
@@ -150,7 +150,7 @@ module Protocol
         # @return [Array(Numeric, String)] [ttl_seconds, context_bytes]
         def ping_ttl_and_context
           ttl_ds  = @data.unpack1("n")
-          context = @data.bytesize > 2 ? @data.byteslice(2..) : "".b
+          context = @data.bytesize > 2 ? @data.byteslice(2..) : EMPTY_BINARY
           [ttl_ds / 10.0, context]
         end
 

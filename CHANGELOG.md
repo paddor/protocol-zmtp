@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.1 — 2026-04-16
+
+### Changed
+
+- **`Frame#initialize` skips redundant `.b` copy.** Body is now kept
+  as-is when it is already `Encoding::BINARY`, avoiding a per-frame
+  String allocation on the read path (`read_exactly` and `byteslice`
+  already return binary strings).
+
+- **`Frame#to_wire` uses `String.new(capacity:)` with `<<` appends**
+  instead of `+` concatenation, reducing from 3 intermediate String
+  allocations per frame to 1 pre-sized buffer.
+
+- **`Frame.encode_message` pre-computes wire size** for the output
+  buffer `capacity:` hint, avoiding re-allocations during fan-out.
+  Single-part messages (the common case) skip the iteration and
+  inline the size calculation.
+
+- **`Command.ping` / `.pong` default to `EMPTY_BINARY`** instead of
+  `"".b`, which allocated a mutable copy on every call despite
+  `frozen_string_literal: true`. `#ping_ttl_and_context` uses
+  `EMPTY_BINARY` for the empty-context fallback.
+
+- **`Subscription.body` drops redundant outer `.b`** — both operands
+  are already binary, so the concatenation result is binary without
+  a second encoding conversion.
+
 ## 0.8.0 — 2026-04-15
 
 ### Added

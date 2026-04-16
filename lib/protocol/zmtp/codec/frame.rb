@@ -31,21 +31,28 @@ module Protocol
         # @return [String] frame body (binary)
         attr_reader :body
 
+
         # @param body [String] frame body
         # @param more [Boolean] more frames follow
         # @param command [Boolean] this is a command frame
         def initialize(body, more: false, command: false)
-          @body    = body.b
+          @body    = body.encoding == Encoding::BINARY ? body : body.b
           @more    = more
           @command = command
         end
 
 
         # @return [Boolean] true if more frames follow in this message
-        def more?    = @more
+        def more?
+          @more
+        end
+
 
         # @return [Boolean] true if this is a command frame
-        def command? = @command
+        def command?
+          @command
+        end
+
 
         # Encodes to wire bytes.
         #
@@ -57,9 +64,11 @@ module Protocol
           flags |= FLAGS_COMMAND if @command
 
           if size > SHORT_MAX
-            FLAG_BYTES[flags | FLAGS_LONG] + [size].pack("Q>") + @body
+            buf = String.new(capacity: 9 + size, encoding: Encoding::BINARY)
+            buf << FLAG_BYTES[flags | FLAGS_LONG] << [size].pack("Q>") << @body
           else
-            FLAG_BYTES[flags] + FLAG_BYTES[size] + @body
+            buf = String.new(capacity: 2 + size, encoding: Encoding::BINARY)
+            buf << FLAG_BYTES[flags] << FLAG_BYTES[size] << @body
           end
         end
 
@@ -72,14 +81,29 @@ module Protocol
         # @return [String] frozen binary wire representation
         #
         def self.encode_message(parts)
-          buf  = String.new(encoding: Encoding::BINARY)
+          if parts.size == 1
+            s = parts[0].bytesize
+            wire_size = s > SHORT_MAX ? 9 + s : 2 + s
+          else
+            wire_size = 0
+            j = 0
+            while j < parts.size
+              s = parts[j].bytesize
+              wire_size += s > SHORT_MAX ? 9 + s : 2 + s
+              j += 1
+            end
+          end
+
+          buf  = String.new(capacity: wire_size, encoding: Encoding::BINARY)
           last = parts.size - 1
           i    = 0
+
           while i < parts.size
             body  = parts[i]
             body  = body.b unless body.encoding == Encoding::BINARY
             size  = body.bytesize
             flags = i < last ? FLAGS_MORE : 0
+
             if size > SHORT_MAX
               buf << FLAG_BYTES[flags | FLAGS_LONG] << [size].pack("Q>") << body
             else
@@ -87,6 +111,7 @@ module Protocol
             end
             i += 1
           end
+
           buf.freeze
         end
 
@@ -137,6 +162,7 @@ module Protocol
             (rest.getbyte(4) << 16) | (rest.getbyte(5) << 8)  |
              rest.getbyte(6)
         end
+
       end
     end
   end

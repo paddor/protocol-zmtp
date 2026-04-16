@@ -34,7 +34,7 @@ module Protocol
         # @return [String] binary frame body
         def body(prefix, cancel: false)
           flag = cancel ? FLAG_CANCEL : FLAG_SUBSCRIBE
-          (flag + prefix.b).b
+          flag + (prefix.encoding == Encoding::BINARY ? prefix : prefix.b)
         end
 
 
