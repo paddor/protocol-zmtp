@@ -82,19 +82,20 @@ module Protocol
         #
         def self.encode_message(parts)
           if parts.size == 1
-            s = parts[0].bytesize
-            wire_size = s > SHORT_MAX ? 9 + s : 2 + s
+            s    = parts.first.bytesize
+            wire = s > SHORT_MAX ? 9 + s : 2 + s
           else
-            wire_size = 0
-            j = 0
+            wire = 0
+            j    = 0
+
             while j < parts.size
-              s = parts[j].bytesize
-              wire_size += s > SHORT_MAX ? 9 + s : 2 + s
-              j += 1
+              s     = parts[j].bytesize
+              wire += s > SHORT_MAX ? 9 + s : 2 + s
+              j    += 1
             end
           end
 
-          buf  = String.new(capacity: wire_size, encoding: Encoding::BINARY)
+          buf  = String.new(capacity: wire, encoding: Encoding::BINARY)
           last = parts.size - 1
           i    = 0
 
@@ -105,10 +106,15 @@ module Protocol
             flags = i < last ? FLAGS_MORE : 0
 
             if size > SHORT_MAX
-              buf << FLAG_BYTES[flags | FLAGS_LONG] << [size].pack("Q>") << body
+              buf << FLAG_BYTES[flags | FLAGS_LONG]
+              buf << [size].pack("Q>")
+              buf << body
             else
-              buf << FLAG_BYTES[flags] << FLAG_BYTES[size] << body
+              buf << FLAG_BYTES[flags]
+              buf << FLAG_BYTES[size]
+              buf << body
             end
+
             i += 1
           end
 
