@@ -28,55 +28,6 @@ module Protocol
         FLAG_BYTES = Array.new(256) { |i| i.chr.b.freeze }.freeze
 
 
-        # @return [String] frame body (binary)
-        attr_reader :body
-
-
-        # @param body [String] frame body
-        # @param more [Boolean] more frames follow
-        # @param command [Boolean] this is a command frame
-        def initialize(body, more: false, command: false)
-          @body    = body.encoding == Encoding::BINARY ? body : body.b
-          @more    = more
-          @command = command
-        end
-
-
-        # @return [Boolean] true if more frames follow in this message
-        def more?
-          @more
-        end
-
-
-        # @return [Boolean] true if this is a command frame
-        def command?
-          @command
-        end
-
-
-        # Encodes to wire bytes.
-        #
-        # @return [String] binary wire representation (flags + size + body)
-        def to_wire
-          size   = @body.bytesize
-          flags  = 0
-          flags |= FLAGS_MORE if @more
-          flags |= FLAGS_COMMAND if @command
-
-          if size > SHORT_MAX
-            buf = String.new(capacity: 9 + size, encoding: Encoding::BINARY)
-            buf << FLAG_BYTES[flags | FLAGS_LONG]
-            buf << [size].pack("Q>")
-            buf << @body
-          else
-            buf = String.new(capacity: 2 + size, encoding: Encoding::BINARY)
-            buf << FLAG_BYTES[flags]
-            buf << FLAG_BYTES[size]
-            buf << @body
-          end
-        end
-
-
         # Encodes a multi-part message into a single wire-format string.
         # The result can be written to multiple connections without
         # re-encoding each time (useful for fan-out patterns like PUB).
@@ -180,6 +131,55 @@ module Protocol
 
           wire = io.read_exactly(header_size + size)
           new(wire.byteslice(header_size, size), more: more, command: command)
+        end
+
+
+        # @return [String] frame body (binary)
+        attr_reader :body
+
+
+        # @param body [String] frame body
+        # @param more [Boolean] more frames follow
+        # @param command [Boolean] this is a command frame
+        def initialize(body, more: false, command: false)
+          @body    = body.encoding == Encoding::BINARY ? body : body.b
+          @more    = more
+          @command = command
+        end
+
+
+        # @return [Boolean] true if more frames follow in this message
+        def more?
+          @more
+        end
+
+
+        # @return [Boolean] true if this is a command frame
+        def command?
+          @command
+        end
+
+
+        # Encodes to wire bytes.
+        #
+        # @return [String] binary wire representation (flags + size + body)
+        def to_wire
+          size   = @body.bytesize
+          flags  = 0
+          flags |= FLAGS_MORE if @more
+          flags |= FLAGS_COMMAND if @command
+
+          if size > SHORT_MAX
+            buf = String.new(capacity: 9 + size, encoding: Encoding::BINARY)
+            buf << FLAG_BYTES[flags | FLAGS_LONG]
+            buf << [size].pack("Q>")
+            buf << @body
+          else
+            buf = String.new(capacity: 2 + size, encoding: Encoding::BINARY)
+            buf << FLAG_BYTES[flags]
+            buf << FLAG_BYTES[size]
+            buf << @body
+          end
         end
 
       end
