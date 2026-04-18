@@ -128,49 +128,58 @@ module Protocol
 
         # Reads one frame from an IO-like object.
         #
-        # @param io [#read_exactly] must support read_exactly(n)
+        # Uses #peek to buffer just enough header bytes (2 for short frames,
+        # 9 for long), then drains header + body in a single #read_exactly.
+        # This is 2 calls for both short and long frames, vs the naive 3 for
+        # long. A speculative read_exactly(9) would be unsafe: a <7-byte
+        # short frame at idle would hang waiting for bytes that never arrive,
+        # or consume bytes from the next frame on a mixed stream.
+        #
+        # @param io [#peek, #read_exactly]
         # @return [Frame]
         # @raise [Error] on invalid frame
         # @raise [EOFError] if the connection is closed
         def self.read_from(io, max_message_size: nil)
-          # Every valid frame has at least 2 header bytes (flags + 1 size
-          # byte for short frames, or flags + first size byte for long).
-          # Fetching both up-front gives short frames a 2-call read path
-          # (header + body) instead of 3.
-          head  = io.read_exactly(2)
-          flags = head.getbyte(0)
+          buf = io.peek do |b|
+            next false if b.bytesize < 2
+            (b.getbyte(0) & FLAGS_LONG) == 0 || b.bytesize >= 9
+          end
 
+          raise EOFError, "Stream finished before reading frame header" if buf.bytesize < 2
+
+          flags   = buf.getbyte(0)
           more    = (flags & FLAGS_MORE) != 0
           long    = (flags & FLAGS_LONG) != 0
           command = (flags & FLAGS_COMMAND) != 0
-          size    = long ? read_long_size(io, head.getbyte(1)) : head.getbyte(1)
+
+          if long
+            raise EOFError, "Stream finished before reading long frame size" if buf.bytesize < 9
+
+            size = (buf.getbyte(1) << 56) |
+                   (buf.getbyte(2) << 48) |
+                   (buf.getbyte(3) << 40) |
+                   (buf.getbyte(4) << 32) |
+                   (buf.getbyte(5) << 24) |
+                   (buf.getbyte(6) << 16) |
+                   (buf.getbyte(7) << 8)  |
+                    buf.getbyte(8)
+            header_size = 9
+          else
+            size        = buf.getbyte(1)
+            header_size = 2
+          end
 
           if max_message_size && size > max_message_size
             raise Error, "frame size #{size} exceeds max_message_size #{max_message_size}"
           end
 
-          body = size > 0 ? io.read_exactly(size) : EMPTY_BINARY
+          if size.zero?
+            io.read_exactly(header_size)
+            return new(EMPTY_BINARY, more: more, command: command)
+          end
 
-          new(body, more: more, command: command)
-        end
-
-
-        # Reads the remaining 7 bytes of a long frame's 8-byte big-endian
-        # size field and combines them with +msb+ (already consumed as the
-        # second byte of the 2-byte speculative header read).
-        #
-        # @param io [#read_exactly]
-        # @param msb [Integer] first (most-significant) byte of the size
-        # @return [Integer] full 64-bit frame size
-        #
-        def self.read_long_size(io, msb)
-          rest = io.read_exactly(7)
-
-          (msb << 56) |
-            (rest.getbyte(0) << 48) | (rest.getbyte(1) << 40) |
-            (rest.getbyte(2) << 32) | (rest.getbyte(3) << 24) |
-            (rest.getbyte(4) << 16) | (rest.getbyte(5) << 8)  |
-             rest.getbyte(6)
+          wire = io.read_exactly(header_size + size)
+          new(wire.byteslice(header_size, size), more: more, command: command)
         end
 
       end

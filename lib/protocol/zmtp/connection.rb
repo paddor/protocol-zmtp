@@ -42,7 +42,7 @@ module Protocol
       attr_reader :peer_minor
 
 
-      # @return [Object] transport IO (#read_exactly, #write, #flush, #close)
+      # @return [Object] transport IO (#peek, #read_exactly, #write, #flush, #close)
       attr_reader :io
 
 
@@ -50,7 +50,7 @@ module Protocol
       attr_reader :last_received_at
 
 
-      # @param io [#read_exactly, #write, #flush, #close] transport IO
+      # @param io [#peek, #read_exactly, #write, #flush, #close] transport IO
       # @param socket_type [String] our socket type name (e.g. "REQ")
       # @param identity [String] our identity
       # @param as_server [Boolean] whether we are the server side

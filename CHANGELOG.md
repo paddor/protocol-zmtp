@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.0 — 2026-04-18
+
+### Changed
+
+- **`Frame.read_from` uses `io.peek` to collapse the long-frame read
+  path.** The previous implementation issued 2 `read_exactly` calls for
+  short frames (header + body) and 3 for long frames (2-byte header,
+  remaining 7 size bytes, body). It now peeks just enough header bytes
+  (2 for short, 9 for long), decodes the size from the peek buffer, and
+  drains header + body in a single `read_exactly(header_size + size)`.
+  Long frames drop to the same 2-call read path as short frames; the
+  `read_long_size` helper is gone. A speculative `read_exactly(9)` would
+  not be safe here — a <7-byte short frame at idle would hang waiting
+  for bytes that never arrive, or steal bytes from the next frame on a
+  mixed stream.
+
+- **Transport IO must now also respond to `#peek`** in addition to
+  `#read_exactly`, `#write`, `#flush`, and `#close`. `io-stream`'s
+  `Async::IO::Stream` already provides this; custom transport wrappers
+  need a `#peek(&block)` that yields the current read buffer and fills
+  it until the block returns truthy.
+
 ## 0.8.1 — 2026-04-16
 
 ### Changed
