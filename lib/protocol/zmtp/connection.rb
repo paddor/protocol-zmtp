@@ -214,11 +214,11 @@ module Protocol
             next
           end
 
-          frames << frame.body.freeze
+          frames << frame.body
           break unless frame.more?
         end
 
-        frames.freeze
+        frames
       end
 
 

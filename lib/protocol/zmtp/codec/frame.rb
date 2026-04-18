@@ -56,7 +56,6 @@ module Protocol
 
           while i < parts.size
             body  = parts[i]
-            body  = body.b unless body.encoding == Encoding::BINARY
             size  = body.bytesize
             flags = i < last ? FLAGS_MORE : 0
 
@@ -142,7 +141,7 @@ module Protocol
         # @param more [Boolean] more frames follow
         # @param command [Boolean] this is a command frame
         def initialize(body, more: false, command: false)
-          @body    = body.encoding == Encoding::BINARY ? body : body.b
+          @body    = body
           @more    = more
           @command = command
         end

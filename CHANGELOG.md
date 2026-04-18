@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Drop hot-path binary-encoding coercion and frame-body freezes.**
+  `Frame#initialize` and `Frame.encode_message` no longer copy non-binary
+  bodies via `String#b` — callers (OMQ's `Writable#send`, ZMTP command
+  builders) already hand in binary bytes, and for an outgoing message the
+  receiver (`String.new(capacity:) << body`) treats any encoding as raw
+  bytes once the buffer itself is binary. `Connection#receive_message`
+  also stops freezing each frame body and the returned parts array; the
+  caller decides what to freeze. Net effect: fewer allocations per
+  message and no per-part `.freeze` on the receive path.
+
 ## 0.9.0 — 2026-04-18
 
 ### Changed
