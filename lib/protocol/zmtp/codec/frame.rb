@@ -58,17 +58,21 @@ module Protocol
         #
         # @return [String] binary wire representation (flags + size + body)
         def to_wire
-          size  = @body.bytesize
-          flags = 0
+          size   = @body.bytesize
+          flags  = 0
           flags |= FLAGS_MORE if @more
           flags |= FLAGS_COMMAND if @command
 
           if size > SHORT_MAX
             buf = String.new(capacity: 9 + size, encoding: Encoding::BINARY)
-            buf << FLAG_BYTES[flags | FLAGS_LONG] << [size].pack("Q>") << @body
+            buf << FLAG_BYTES[flags | FLAGS_LONG]
+            buf << [size].pack("Q>")
+            buf << @body
           else
             buf = String.new(capacity: 2 + size, encoding: Encoding::BINARY)
-            buf << FLAG_BYTES[flags] << FLAG_BYTES[size] << @body
+            buf << FLAG_BYTES[flags]
+            buf << FLAG_BYTES[size]
+            buf << @body
           end
         end
 
