@@ -23,10 +23,6 @@ module Protocol
       class Curve
         MECHANISM_NAME = "CURVE"
 
-        # Extra READY/INITIATE properties merged in by extensions
-        # (e.g. ZMTP-Zstd's X-Compression). nil = none.
-        attr_accessor :metadata
-
 
         # Nonce prefixes.
         NONCE_PREFIX_HELLO     = "CurveZMQHELLO---"
@@ -100,10 +96,9 @@ module Protocol
             end
           end
 
-          @session_box      = nil
-          @send_nonce       = 0
-          @recv_nonce       = -1
-          @metadata = nil
+          @session_box = nil
+          @send_nonce  = 0
+          @recv_nonce  = -1
         end
 
 
@@ -139,15 +134,14 @@ module Protocol
         # @param as_server [Boolean] ignored -- uses the value from #initialize
         # @param socket_type [String] our socket type name
         # @param identity [String] our identity
-        # @param qos [Integer] QoS level
-        # @param qos_hash [String] supported hash algorithms
-        # @return [Hash] { peer_socket_type:, peer_identity:, peer_qos:, peer_qos_hash: }
+        # @param metadata [Hash{String => String}, nil] extra READY properties
+        # @return [Hash] { peer_socket_type:, peer_identity:, peer_properties: }
         # @raise [Error] on handshake failure
-        def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
+        def handshake!(io, as_server:, socket_type:, identity:, metadata: nil)
           if @as_server
-            server_handshake!(io, socket_type:, identity:, qos:, qos_hash:)
+            server_handshake!(io, socket_type:, identity:, metadata:)
           else
-            client_handshake!(io, socket_type:, identity:, qos:, qos_hash:)
+            client_handshake!(io, socket_type:, identity:, metadata:)
           end
         end
 
@@ -227,7 +221,7 @@ module Protocol
         # Client-side handshake
         # ----------------------------------------------------------------
 
-        def client_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
+        def client_handshake!(io, socket_type:, identity:, metadata: nil)
           cn_secret = @crypto::PrivateKey.generate
           cn_public = cn_secret.public_key
 
@@ -288,18 +282,14 @@ module Protocol
           vouch           = @crypto::Box.new(sn_public, @permanent_secret).encrypt(vouch_nonce, vouch_plaintext)
 
           props = { "Socket-Type" => socket_type, "Identity" => identity }
-          if qos > 0
-            props["X-QoS"]      = qos.to_s
-            props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
-          end
-          props.merge!(@metadata) if @metadata
-          metadata = Codec::Command.encode_properties(props)
+          props.merge!(metadata) if metadata && !metadata.empty?
+          metadata_bytes = Codec::Command.encode_properties(props)
 
           initiate_box_plaintext = "".b
           initiate_box_plaintext << @permanent_public.to_s
           initiate_box_plaintext << vouch_nonce.byteslice(8, 16)
           initiate_box_plaintext << vouch
-          initiate_box_plaintext << metadata
+          initiate_box_plaintext << metadata_bytes
 
           init_short_nonce = [1].pack("Q>")
           init_nonce       = NONCE_PREFIX_INITIATE + init_short_nonce
@@ -336,8 +326,6 @@ module Protocol
           props            = Codec::Command.decode_properties(r_plaintext)
           peer_socket_type = props["Socket-Type"]
           peer_identity    = props["Identity"] || ""
-          peer_qos         = (props["X-QoS"] || "0").to_i
-          peer_qos_hash    = props["X-QoS-Hash"] || ""
 
           @session_box = session
           @send_nonce  = 1
@@ -347,8 +335,7 @@ module Protocol
           {
             peer_socket_type: peer_socket_type,
             peer_identity:    peer_identity,
-            peer_qos:         peer_qos,
-            peer_qos_hash:    peer_qos_hash,
+            peer_public_key:  @server_public,
             peer_properties:  props,
             peer_major:       @peer_major,
             peer_minor:       @peer_minor,
@@ -360,7 +347,7 @@ module Protocol
         # Server-side handshake
         # ----------------------------------------------------------------
 
-        def server_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
+        def server_handshake!(io, socket_type:, identity:, metadata: nil)
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: true))
           io.flush
           peer_greeting = Codec::Greeting.read_from(io)
@@ -478,7 +465,7 @@ module Protocol
           end
 
           if @authenticator
-            peer = PeerInfo.new(public_key: client_permanent)
+            peer = PeerInfo.new(public_key: client_permanent, identity: "")
             unless @authenticator.call(peer)
               send_error(io, "client key not authorized")
               raise Error, "client key not authorized"
@@ -488,11 +475,7 @@ module Protocol
 
           # --- READY ---
           ready_props = { "Socket-Type" => socket_type, "Identity" => identity }
-          if qos > 0
-            ready_props["X-QoS"]      = qos.to_s
-            ready_props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
-          end
-          ready_props.merge!(@metadata) if @metadata
+          ready_props.merge!(metadata) if metadata && !metadata.empty?
           ready_metadata = Codec::Command.encode_properties(ready_props)
 
           r_short_nonce = [1].pack("Q>")
@@ -517,8 +500,7 @@ module Protocol
           {
             peer_socket_type: props["Socket-Type"],
             peer_identity:    props["Identity"] || "",
-            peer_qos:         (props["X-QoS"] || "0").to_i,
-            peer_qos_hash:    props["X-QoS-Hash"] || "",
+            peer_public_key:  client_permanent,
             peer_properties:  props,
             peer_major:       @peer_major,
             peer_minor:       @peer_minor,

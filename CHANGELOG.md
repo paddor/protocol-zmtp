@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-04-20
+
+### Added
+
+- **`PeerInfo` extended with `identity`.** `PeerInfo = Data.define(:public_key, :identity)`
+  now bundles both post-handshake peer anchors. CURVE authenticators
+  still receive a `PeerInfo` during auth (with `identity: ""`, since
+  identity arrives post-auth).
+- **`Connection#peer_info`.** After a successful handshake, returns a
+  frozen `PeerInfo` combining the peer's CURVE public key (if any) and
+  `ZMQ_IDENTITY`. Usable directly as a Hash key. Nil before handshake.
+  Upper layers (e.g. omq-qos levels 2/3) use the whole value as a
+  stable per-peer identifier across reconnects.
+- **Mechanism return hashes carry `peer_public_key`.** Both
+  `Mechanism::Null#handshake!` and `Mechanism::Curve` handshake paths now
+  return `peer_public_key:` alongside `peer_identity:` etc. (nil for
+  NULL; the peer's long-term `crypto::PublicKey` for CURVE).
 
 ### Changed
 

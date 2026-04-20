@@ -16,22 +16,15 @@ module Protocol
         MECHANISM_NAME = "PLAIN"
 
 
-        # Extra READY/INITIATE properties an upper layer wants this side to
-        # advertise. Mutated before #handshake!.
-        # @return [Hash{String => String}]
-        attr_accessor :metadata
-
-
         # @param username [String] client username (max 255 bytes)
         # @param password [String] client password (max 255 bytes)
         # @param authenticator [#call, nil] server-side credential verifier;
         #   called as +authenticator.call(username, password)+ and must return
         #   truthy to accept the connection.  When +nil+, all credentials pass.
         def initialize(username: "", password: "", authenticator: nil)
-          @username         = username
-          @password         = password
-          @authenticator    = authenticator
-          @metadata = nil
+          @username      = username
+          @password      = password
+          @authenticator = authenticator
         end
 
 
@@ -41,9 +34,10 @@ module Protocol
         # @param as_server [Boolean]
         # @param socket_type [String]
         # @param identity [String]
-        # @return [Hash] { peer_socket_type:, peer_identity: }
+        # @param metadata [Hash{String => String}, nil] extra READY properties
+        # @return [Hash] { peer_socket_type:, peer_identity:, peer_properties: }
         # @raise [Error]
-        def handshake!(io, as_server:, socket_type:, identity:, qos: 0, qos_hash: "")
+        def handshake!(io, as_server:, socket_type:, identity:, metadata: nil)
           io.write(Codec::Greeting.encode(mechanism: MECHANISM_NAME, as_server: as_server))
           io.flush
 
@@ -54,11 +48,9 @@ module Protocol
           end
 
           if as_server
-            server_handshake! io, socket_type: socket_type, identity: identity,
-              qos: qos, qos_hash: qos_hash
+            server_handshake! io, socket_type: socket_type, identity: identity, metadata: metadata
           else
-            client_handshake! io, socket_type: socket_type, identity: identity,
-              qos: qos, qos_hash: qos_hash
+            client_handshake! io, socket_type: socket_type, identity: identity, metadata: metadata
           end
         end
 
@@ -72,7 +64,7 @@ module Protocol
         private
 
 
-        def client_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
+        def client_handshake!(io, socket_type:, identity:, metadata: nil)
           send_command(io, hello_command)
 
           cmd = read_command(io)
@@ -80,15 +72,9 @@ module Protocol
 
           props = {
             "Socket-Type" => socket_type,
-            "Identity" => identity
+            "Identity" => identity,
           }
-
-          if qos > 0
-            props["X-QoS"]      = qos.to_s
-            props["X-QoS-Hash"] = qos_hash unless qos_hash.empty?
-          end
-
-          props.merge!(@metadata) if @metadata && !@metadata.empty?
+          props.merge!(metadata) if metadata && !metadata.empty?
           initiate = Codec::Command.new("INITIATE", Codec::Command.encode_properties(props))
           send_command(io, initiate)
 
@@ -99,7 +85,7 @@ module Protocol
         end
 
 
-        def server_handshake!(io, socket_type:, identity:, qos: 0, qos_hash: "")
+        def server_handshake!(io, socket_type:, identity:, metadata: nil)
           cmd = read_command(io)
           raise Error, "expected HELLO, got #{cmd.name}" unless cmd.name == "HELLO"
 
@@ -116,8 +102,7 @@ module Protocol
 
           peer_info = extract_peer_info(cmd)
 
-          ready = Codec::Command.ready socket_type: socket_type, identity: identity,
-            qos: qos, qos_hash: qos_hash, metadata: @metadata
+          ready = Codec::Command.ready socket_type: socket_type, identity: identity, metadata: metadata
           send_command io, ready
 
           peer_info
@@ -165,9 +150,7 @@ module Protocol
           {
             peer_socket_type: peer_socket_type,
             peer_identity:    props["Identity"] || "",
-            peer_qos:         (props["X-QoS"] || "0").to_i,
-            peer_qos_hash:    props["X-QoS-Hash"] || "",
-            peer_properties:  props
+            peer_properties:  props,
           }
         end
 

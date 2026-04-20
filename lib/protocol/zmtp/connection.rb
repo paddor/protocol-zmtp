@@ -20,16 +20,14 @@ module Protocol
       attr_reader :peer_identity
 
 
-      # @return [Integer] peer's QoS level (from READY handshake, 0 if absent)
-      attr_reader :peer_qos
-
-
-      # @return [String] peer's supported hash algorithms in preference order
-      attr_reader :peer_qos_hash
+      # @return [Object, nil] peer's CURVE long-term public key post-handshake
+      #   (+crypto::PublicKey+ when the mechanism is CURVE; +nil+ for NULL).
+      attr_reader :peer_public_key
 
 
       # @return [Hash{String => String}, nil] full peer READY property hash
-      #   (set after a successful handshake; nil before)
+      #   (set after a successful handshake; nil before).
+      #   Upper layers extract their own X-* properties from here.
       attr_reader :peer_properties
 
 
@@ -56,8 +54,12 @@ module Protocol
       # @param as_server [Boolean] whether we are the server side
       # @param mechanism [Mechanism::Null, Mechanism::Curve] security mechanism
       # @param max_message_size [Integer, nil] max frame size in bytes, nil = unlimited
+      # @param opts [Hash{String => String}] extra READY properties to
+      #   advertise (e.g. +"X-QoS" => "1"+). Upper-layer extensions use
+      #   this to inject their own negotiated properties without the
+      #   codec needing to know about them.
       def initialize(io, socket_type:, identity: "", as_server: false,
-                     mechanism: nil, max_message_size: nil, qos: 0, qos_hash: "")
+                     mechanism: nil, max_message_size: nil, **opts)
         @io               = io
         @socket_type      = socket_type
         @identity         = identity
@@ -65,13 +67,11 @@ module Protocol
         @mechanism        = mechanism || Mechanism::Null.new
         @peer_socket_type = nil
         @peer_identity    = nil
-        @peer_qos         = nil
-        @peer_qos_hash    = nil
+        @peer_public_key  = nil
         @peer_properties  = nil
         @peer_major       = nil
         @peer_minor       = nil
-        @qos              = qos
-        @qos_hash         = qos_hash
+        @metadata         = opts.empty? ? nil : opts.transform_keys(&:to_s)
         @mutex            = Mutex.new
         @max_message_size = max_message_size
         @last_received_at = nil
@@ -92,13 +92,11 @@ module Protocol
           as_server:   @as_server,
           socket_type: @socket_type,
           identity:    @identity,
-          qos:         @qos,
-          qos_hash:    @qos_hash
+          metadata:    @metadata
 
         @peer_socket_type = result[:peer_socket_type]
         @peer_identity    = result[:peer_identity]
-        @peer_qos         = result[:peer_qos] || 0
-        @peer_qos_hash    = result[:peer_qos_hash] || ""
+        @peer_public_key  = result[:peer_public_key]
         @peer_properties  = result[:peer_properties]
         @peer_major       = result[:peer_major]
         @peer_minor       = result[:peer_minor]
@@ -111,6 +109,17 @@ module Protocol
           raise Error,
                 "incompatible socket types: #{@socket_type} cannot connect to #{@peer_socket_type}"
         end
+      end
+
+
+      # Returns a {PeerInfo} value bundling the peer's CURVE public key
+      # and identity for use as a stable per-peer key (frozen, hash-usable).
+      # Nil before the handshake has completed.
+      #
+      # @return [PeerInfo, nil]
+      def peer_info
+        return nil unless @peer_socket_type
+        PeerInfo.new(public_key: @peer_public_key, identity: @peer_identity)
       end
 
 
