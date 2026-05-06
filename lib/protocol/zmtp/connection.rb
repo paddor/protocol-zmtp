@@ -188,6 +188,25 @@ module Protocol
       end
 
 
+      # Writes multiple pre-encoded wire byte strings under a single
+      # mutex acquisition.
+      #
+      # @param wire_strings [Array<String>]
+      # @return [void]
+      def write_wire_batch(wire_strings)
+        with_deferred_cancel do
+          @mutex.synchronize do
+            i = 0
+            n = wire_strings.size
+            while i < n
+              @io.write(wire_strings[i])
+              i += 1
+            end
+          end
+        end
+      end
+
+
       # Returns true if the ZMTP mechanism encrypts at the frame level
       # (e.g. CURVE, BLAKE3ZMQ).
       #
