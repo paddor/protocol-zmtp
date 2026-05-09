@@ -80,6 +80,7 @@ module Protocol
         # writes in place so the per-message 2-or-9 byte String allocation
         # in write_frames disappears on the hot send path.
         @header_buf = String.new(capacity: 9, encoding: Encoding::BINARY)
+        @frame_buf  = String.new(capacity: 257, encoding: Encoding::BINARY)
       end
 
 
@@ -335,11 +336,10 @@ module Protocol
       private
 
       # Defers task cancellation around a block of wire writes so the
-      # peer never sees a half-written frame. Without this, an
-      # +Async::Cancel+ arriving between the header write and the body
-      # write (the unencrypted path issues two separate +@io.write+
-      # calls per frame) would desync the peer's framer
-      # unrecoverably.
+      # peer never sees a half-written frame or partial multipart
+      # message. Without this, an +Async::Cancel+ arriving between
+      # successive frames (or between header and body writes for long
+      # frames) would desync the peer's framer unrecoverably.
       #
       # When called outside an Async task (test fixtures, blocking
       # callers), the block runs directly -- there is no task to defer
@@ -356,15 +356,16 @@ module Protocol
 
       # Writes message parts as ZMTP frames, encrypting if needed.
       #
-      # For the unencrypted path, writes the frame header and body
-      # separately to the IO instead of allocating a wire String. This
-      # avoids copying the body just to glue a 1- or 9-byte header onto
-      # it -- significant for large messages where the body copy was
-      # the dominant allocation per send.
+      # Short frames (body <= 255 B) combine the 2-byte header and
+      # body into a reusable buffer for a single +@io.write+, halving
+      # the per-frame mutex overhead in io-stream. Long frames write
+      # header and body separately to avoid copying the body.
       def write_frames(parts)
-        encrypted = @mechanism.encrypted?
-        buf       = @header_buf
-        last      = parts.size - 1
+        encrypted  = @mechanism.encrypted?
+        buf        = @header_buf
+        fbuf       = @frame_buf
+        flag_bytes = Codec::Frame::FLAG_BYTES
+        last       = parts.size - 1
 
         i = 0
 
@@ -380,16 +381,18 @@ module Protocol
             size  = body.bytesize
             flags = more ? Codec::Frame::FLAGS_MORE : 0
 
-            buf.clear
-
             if size > Codec::Frame::SHORT_MAX
+              buf.clear
               [flags | Codec::Frame::FLAGS_LONG, size].pack("CQ>", buffer: buf)
+              @io.write(buf)
+              @io.write(body)
             else
-              [flags, size].pack("CC", buffer: buf)
+              fbuf.clear
+              fbuf << flag_bytes[flags]
+              fbuf << flag_bytes[size]
+              fbuf << body
+              @io.write(fbuf)
             end
-
-            @io.write(buf)
-            @io.write(body)
           end
 
           i += 1
